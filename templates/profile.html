@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>个人中心 - 聆心小开</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-start: #EBE6DF;
+      --bg-end: #F4F1EB;
+      --text-main: #5C544B;
+      --text-sub: #9E968D;
+      --accent: #B59C82;
+      --accent-hover: #9E856C;
+      --accent-light: #E8DDD2;
+      --accent-dark: #7A6A58;
+      --shadow: rgba(92,84,75,0.12);
+    }
+    body {
+      font-family: 'Noto Sans SC', 'PingFang SC', sans-serif;
+      background: linear-gradient(135deg, var(--bg-start) 0%, var(--bg-end) 100%);
+      min-height: 100vh;
+      padding: 2rem 1rem;
+      margin: 0;
+    }
+    .nav-bar {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      background: linear-gradient(90deg, var(--accent-dark), var(--accent));
+      padding: 0.75rem 1.5rem;
+      box-shadow: 0 2px 16px var(--shadow);
+      z-index: 100;
+    }
+    .nav-bar a {
+      color: rgba(255,255,255,0.95);
+      text-decoration: none;
+      font-weight: 500;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .nav-bar a:hover { color: #fff; }
+    .profile-container {
+      max-width: 640px;
+      margin: 5rem auto 2rem;
+      background: rgba(255,255,255,0.85);
+      backdrop-filter: blur(20px);
+      border-radius: 24px;
+      box-shadow: 0 16px 48px var(--shadow);
+      border: 1px solid rgba(255,255,255,0.9);
+      overflow: hidden;
+    }
+    .profile-header {
+      background: linear-gradient(135deg, var(--accent-dark), var(--accent));
+      color: #fff;
+      padding: 2rem;
+      text-align: center;
+    }
+    .profile-avatar {
+      width: 100px;
+      height: 100px;
+      border-radius: 50%;
+      border: 3px solid rgba(255,255,255,0.9);
+      object-fit: cover;
+      margin: 0 auto 1rem;
+      display: block;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.15);
+    }
+    .profile-name {
+      font-size: 1.4rem;
+      font-weight: 700;
+      margin-bottom: 0.25rem;
+    }
+    .profile-platform {
+      font-size: 0.9rem;
+      opacity: 0.9;
+    }
+    .profile-content { padding: 2rem; }
+    .profile-section { margin-bottom: 2rem; }
+    .profile-section:last-of-type { margin-bottom: 0; }
+    .profile-section-title {
+      color: var(--accent-dark);
+      font-weight: 700;
+      font-size: 1rem;
+      margin-bottom: 1rem;
+      padding-bottom: 0.5rem;
+      border-bottom: 2px solid var(--accent-light);
+    }
+    .profile-item {
+      display: flex;
+      align-items: center;
+      padding: 1rem 1.25rem;
+      border-radius: 16px;
+      transition: all 0.3s ease;
+      margin-bottom: 0.5rem;
+    }
+    .profile-item:hover { background: var(--accent-light); }
+    .profile-item i {
+      width: 36px;
+      font-size: 1.1rem;
+      color: var(--accent);
+    }
+    .profile-item-content { flex: 1; }
+    .profile-item-label {
+      font-weight: 600;
+      color: var(--text-main);
+    }
+    .profile-item-value { color: var(--text-sub); font-size: 0.95rem; }
+    .btn-edit {
+      background: linear-gradient(135deg, var(--accent-dark), var(--accent));
+      color: #fff;
+      border: none;
+      padding: 0.6rem 1.5rem;
+      border-radius: 50px;
+      font-weight: 600;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      box-shadow: 0 6px 20px rgba(181,156,130,0.3);
+      transition: all 0.3s ease;
+    }
+    .btn-edit:hover {
+      color: #fff;
+      transform: translateY(-2px);
+      box-shadow: 0 10px 28px rgba(181,156,130,0.4);
+    }
+
+    /* ====== 多端适配 ====== */
+    /* 大平板/iPad（769-1024px） */
+    @media (min-width: 769px) and (max-width: 1024px) {
+      .profile-container { max-width: 720px; margin: 5rem auto 2rem; }
+    }
+    /* 小平板（481-768px） */
+    @media (min-width: 481px) and (max-width: 768px) {
+      body { padding: 1.5rem 1rem; }
+      .profile-container { max-width: 100%; margin: 4.5rem auto 1.5rem; }
+      .profile-content { padding: 1.5rem; }
+      .profile-header { padding: 1.75rem; }
+    }
+    /* 手机（<=480px） */
+    @media (max-width: 480px) {
+      body { padding: 1rem 0.75rem; }
+      .nav-bar { padding: 0.6rem 1rem; }
+      .profile-container { margin: 4rem auto 1rem; border-radius: 18px; }
+      .profile-header { padding: 1.5rem 1rem; }
+      .profile-avatar { width: 84px; height: 84px; }
+      .profile-name { font-size: 1.2rem; }
+      .profile-platform { font-size: 0.82rem; }
+      .profile-content { padding: 1.25rem 1rem; }
+      .profile-section { margin-bottom: 1.5rem; }
+      .profile-section-title { font-size: 0.95rem; }
+      .profile-item { padding: 0.85rem 0.9rem; border-radius: 12px; }
+      .profile-item i { width: 28px; font-size: 1rem; }
+      .profile-item-label { font-size: 0.95rem; }
+      .profile-item-value { font-size: 0.85rem; }
+      .btn-edit { padding: 0.55rem 1.3rem; font-size: 0.92rem; }
+    }
+    /* 超大屏（>=1400px） */
+    @media (min-width: 1400px) {
+      .profile-container { max-width: 760px; }
+    }
+  </style>
+</head>
+<body>
+  <nav class="nav-bar">
+    <a href="index.html"><i class="fas fa-arrow-left"></i> 返回首页</a>
+  </nav>
+
+  <div class="profile-container">
+    <div class="profile-header">
+      <img src="{{ session.user.avatar }}" alt="用户头像" class="profile-avatar">
+      <div class="profile-name">{{ session.user.nickname }}</div>
+      <div class="profile-platform">
+        {% if session.user.platform == 'wechat' %}
+        <i class="fab fa-weixin"></i> 微信用户
+        {% elif session.user.platform == 'feishu' %}
+        <i class="feishu-icon"></i> 飞书用户
+        {% else %}
+        <i class="fab fa-qq"></i> QQ用户
+        {% endif %}
+      </div>
+    </div>
+    <div class="profile-content">
+      <div class="profile-section">
+        <h3 class="profile-section-title">基本信息</h3>
+        <div class="profile-item">
+          <i class="fas fa-user"></i>
+          <div class="profile-item-content">
+            <div class="profile-item-label">用户名</div>
+            <div class="profile-item-value">{{ session.user.nickname }}</div>
+          </div>
+        </div>
+        <div class="profile-item">
+          <i class="fas fa-id-card"></i>
+          <div class="profile-item-content">
+            <div class="profile-item-label">用户ID</div>
+            <div class="profile-item-value">{{ session.user.openid }}</div>
+          </div>
+        </div>
+      </div>
+      <div class="profile-section">
+        <h3 class="profile-section-title">使用统计</h3>
+        <div class="profile-item">
+          <i class="fas fa-comments"></i>
+          <div class="profile-item-content">
+            <div class="profile-item-label">咨询次数</div>
+            <div class="profile-item-value">0 次</div>
+          </div>
+        </div>
+        <div class="profile-item">
+          <i class="fas fa-book"></i>
+          <div class="profile-item-content">
+            <div class="profile-item-label">阅读文章</div>
+            <div class="profile-item-value">0 篇</div>
+          </div>
+        </div>
+      </div>
+      <div class="text-center mt-4">
+        <a href="/settings" class="btn-edit">
+          <i class="fas fa-cog"></i> 编辑设置
+        </a>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

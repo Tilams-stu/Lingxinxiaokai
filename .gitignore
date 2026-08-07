@@ -1,0 +1,52 @@
+# 依赖
+node_modules/
+web/node_modules/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.Python
+venv/
+.venv/
+
+# 环境与密钥（切勿提交真实 .env）
+.env
+templates/.env
+*.local
+
+# 本地数据与日志
+templates/data/
+*.db
+templates/logs/
+*.log
+
+# 构建缓存（保留 templates/dist 便于克隆后直接运行 Flask；若只保留源码可取消注释下一行）
+# templates/dist/
+
+# IDE
+.vscode/
+.idea/
+*.suo
+.DS_Store
+Thumbs.db
+
+# 误放在子目录的仓库（应使用仓库根目录）
+templates/.git/
+
+# Python 虚拟环境（勿提交）
+venv/
+templates/venv/
+
+# 归档与安装包（体积大、无源码意义）
+*.zip
+*.apk
+*.ipa
+
+# 本地迁移归档（保留旧 Git 历史，但不上传到新仓库）
+/archive/
+
+# 任意位置的依赖和本地虚拟环境
+**/node_modules/
+**/*_venv/
+templates/__pycache__/

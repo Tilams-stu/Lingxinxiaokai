@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>用户索引 - 聆心小开</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            warm: {
+              sand: '#B59C82',
+              dark: '#7A6A58',
+              light: '#E8DDD2',
+              bg: '#F4F1EB',
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    :root {
+      --bg-start: #EBE6DF;
+      --bg-end: #F4F1EB;
+      --text-main: #5C544B;
+      --text-sub: #9E968D;
+      --accent: #B59C82;
+      --accent-hover: #9E856C;
+      --accent-light: #E8DDD2;
+      --accent-dark: #7A6A58;
+      --shadow: rgba(92,84,75,0.12);
+    }
+    body {
+      font-family: 'Noto Sans SC', 'PingFang SC', sans-serif;
+      min-height: 100vh;
+      background: linear-gradient(135deg, var(--bg-start) 0%, var(--bg-end) 100%);
+    }
+    .card {
+      background: rgba(255,255,255,0.9);
+      backdrop-filter: blur(16px);
+      border-radius: 20px;
+      box-shadow: 0 12px 40px var(--shadow);
+      border: 1px solid rgba(255,255,255,0.9);
+    }
+    .tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      border-radius: 999px;
+      padding: 6px 14px;
+      font-size: 12px;
+      font-weight: 600;
+      background: var(--accent-light);
+      color: var(--accent-dark);
+    }
+    .btn-warm {
+      background: linear-gradient(135deg, var(--accent-dark), var(--accent));
+      color: white;
+      padding: 8px 18px;
+      border-radius: 50px;
+      font-weight: 600;
+      box-shadow: 0 4px 16px rgba(181,156,130,0.3);
+      transition: all 0.3s ease;
+    }
+    .btn-warm:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 24px rgba(181,156,130,0.4);
+    }
+    .btn-outline {
+      border: 2px solid var(--accent);
+      color: var(--accent-dark);
+      padding: 8px 18px;
+      border-radius: 50px;
+      font-weight: 600;
+      transition: all 0.3s ease;
+    }
+    .btn-outline:hover {
+      background: var(--accent-light);
+    }
+    .message-panel { position: sticky; top: 24px; }
+    .msg-user { background: var(--accent-light) !important; color: var(--text-main); }
+    .msg-agent { background: rgba(255,255,255,0.9) !important; border: 1px solid rgba(181,156,130,0.2); }
+
+    /* ====== 多端适配 ====== */
+    /* 大平板/iPad（769-1024px） */
+    @media (min-width: 769px) and (max-width: 1024px) {
+      .message-panel { position: static; }
+    }
+    /* 小平板/手机（<=768px） */
+    @media (max-width: 768px) {
+      .message-panel { position: static; top: auto; }
+      .card { border-radius: 16px; }
+      table { font-size: 13px; }
+      table th, table td { padding: 8px 6px; white-space: nowrap; }
+    }
+    /* 手机（<=480px） */
+    @media (max-width: 480px) {
+      .btn-warm, .btn-outline { padding: 6px 12px; font-size: 13px; }
+      .tag { padding: 5px 10px; font-size: 11px; }
+      .message-panel #messagePanel { max-height: 50vh; }
+    }
+    /* 超大屏（>=1400px） */
+    @media (min-width: 1400px) {
+      body { max-width: 1400px; margin: 0 auto; }
+    }
+  </style>
+</head>
+<body class="p-6 md:p-10 text-gray-800">
+  <header class="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-8">
+    <div>
+      <p class="text-sm text-[var(--accent-dark)] uppercase tracking-widest font-semibold">数据控制台</p>
+      <h1 class="text-2xl md:text-3xl font-bold" style="color: var(--text-main);">用户索引与聊天快照</h1>
+      <p class="text-gray-500 mt-1">查看所有已登录用户及其最新的陪伴对话</p>
+    </div>
+    <div class="flex items-center gap-3">
+      <a href="index（心理陪伴）.html" class="btn-outline inline-flex items-center">
+        <i class="fas fa-arrow-left mr-2"></i>返回陪伴界面
+      </a>
+      <button id="userLogoutBtn" class="btn-warm inline-flex items-center">
+        <i class="fas fa-door-open mr-2"></i>退出登录
+      </button>
+    </div>
+  </header>
+
+  <div id="authNotice" class="card p-6 mb-8 hidden">
+    <div class="flex items-center gap-4" style="color: var(--accent-dark);">
+      <i class="fas fa-lock text-3xl"></i>
+      <div>
+        <h2 class="text-xl font-semibold">尚未登录</h2>
+        <p class="text-gray-600 mt-1">请在心理陪伴界面完成登录，以便访问用户索引和聊天快照。</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+    <div class="card p-6 lg:col-span-2 overflow-x-auto">
+      <div class="flex items-center justify-between mb-4">
+        <div>
+          <h2 class="text-xl font-semibold" style="color: var(--text-main);">用户列表</h2>
+          <p class="text-gray-500 text-sm">根据注册时间倒序排列</p>
+        </div>
+        <span id="userCountBadge" class="tag">
+          <i class="fas fa-users"></i>
+          <span>0 位用户</span>
+        </span>
+      </div>
+      <table class="w-full text-left text-sm">
+        <thead>
+          <tr class="text-gray-500 border-b-2" style="border-color: var(--accent-light);">
+            <th class="py-3 font-semibold">用户名</th>
+            <th class="py-3 font-semibold">学号</th>
+            <th class="py-3 font-semibold">注册时间</th>
+            <th class="py-3 font-semibold">最近登录</th>
+            <th class="py-3 font-semibold">聊天条数</th>
+            <th class="py-3 font-semibold">操作</th>
+          </tr>
+        </thead>
+        <tbody id="userTableBody">
+          <tr>
+            <td colspan="6" class="py-8 text-center text-gray-400">正在加载用户数据...</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="card p-6 message-panel">
+      <div class="flex items-center justify-between mb-4">
+        <h2 class="text-lg font-semibold" style="color: var(--text-main);">聊天快照</h2>
+        <span class="text-sm text-gray-400" id="panelHint">选择用户查看最新对话</span>
+      </div>
+      <div id="messagePanel" class="space-y-4 max-h-[70vh] overflow-y-auto pr-2">
+        <p class="text-gray-400 text-sm">暂无选择</p>
+      </div>
+    </div>
+  </div>
+
+  <template id="messageBubbleTemplate">
+    <div class="p-3 rounded-2xl text-sm shadow-sm border border-transparent">
+      <div class="flex items-center justify-between mb-1 text-xs uppercase tracking-wider">
+        <span class="font-semibold text-gray-500">角色</span>
+        <span class="text-gray-400">时间</span>
+      </div>
+      <p class="leading-relaxed text-gray-700 whitespace-pre-line">内容</p>
+    </div>
+  </template>
+
+  <script>
+    const authToken = localStorage.getItem('authToken');
+    const authUser = (() => {
+      try { return JSON.parse(localStorage.getItem('authUser')) || null; } catch (_) { return null; }
+    })();
+
+    const authNotice = document.getElementById('authNotice');
+    const userTableBody = document.getElementById('userTableBody');
+    const userCountBadge = document.getElementById('userCountBadge');
+    const messagePanel = document.getElementById('messagePanel');
+    const panelHint = document.getElementById('panelHint');
+    const logoutBtn = document.getElementById('userLogoutBtn');
+    const bubbleTemplate = document.getElementById('messageBubbleTemplate');
+
+    function formatDate(value) {
+      if (!value) return '—';
+      const date = new Date(value);
+      return Number.isNaN(date.getTime()) ? value : date.toLocaleString('zh-CN', { hour12: false });
+    }
+
+    function renderUsers(users) {
+      if (!users.length) {
+        userTableBody.innerHTML = '<tr><td colspan="6" class="py-8 text-center text-gray-400">暂无用户</td></tr>';
+        userCountBadge.querySelector('span').textContent = '0 位用户';
+        return;
+      }
+      userCountBadge.querySelector('span').textContent = `${users.length} 位用户`;
+      userTableBody.innerHTML = users.map(user => `
+        <tr class="border-b last:border-b-0 hover:bg-[var(--accent-light)]/50 transition" style="border-color: rgba(181,156,130,0.15);">
+          <td class="py-3">
+            <div class="font-semibold" style="color: var(--text-main);">${user.username}</div>
+            <div class="text-xs text-gray-400">ID: ${user.id}</div>
+          </td>
+          <td class="py-3 text-gray-600">${user.student_id || '—'}</td>
+          <td class="py-3 text-gray-600">${formatDate(user.created_at)}</td>
+          <td class="py-3 text-gray-600">${formatDate(user.last_login)}</td>
+          <td class="py-3 text-gray-600">${user.chat_count || 0}</td>
+          <td class="py-3">
+            <button class="px-3 py-1.5 rounded-full text-sm font-semibold btn-outline viewMessagesBtn"
+              data-user-id="${user.id}" data-username="${user.username}">
+              <i class="fas fa-eye mr-1"></i>查看对话
+            </button>
+          </td>
+        </tr>
+      `).join('');
+
+      document.querySelectorAll('.viewMessagesBtn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          loadMessages(btn.getAttribute('data-user-id'), btn.getAttribute('data-username'));
+        });
+      });
+    }
+
+    function renderMessages(messages, username) {
+      if (!messages.length) {
+        messagePanel.innerHTML = `<p class="text-gray-400 text-sm">暂无与 <span class="font-semibold">${username}</span> 的聊天记录。</p>`;
+        panelHint.textContent = '已加载';
+        return;
+      }
+      panelHint.textContent = `${username} 的最新 ${messages.length} 条记录`;
+      messagePanel.innerHTML = messages.map(msg => {
+        const bubble = bubbleTemplate.content.cloneNode(true);
+        const wrapper = bubble.querySelector('div');
+        wrapper.classList.add(msg.role === 'user' ? 'msg-user' : 'msg-agent');
+        bubble.querySelector('.font-semibold').textContent = msg.role === 'user' ? '用户' : 'AI';
+        bubble.querySelector('.text-gray-400').textContent = formatDate(msg.created_at);
+        bubble.querySelector('p').textContent = msg.content;
+        return wrapper.outerHTML;
+      }).join('');
+    }
+
+    async function loadUsers() {
+      userTableBody.innerHTML = '<tr><td colspan="6" class="py-8 text-center text-gray-400">正在加载用户数据...</td></tr>';
+      try {
+        const response = await fetch('/api/users', {
+          headers: { 'Authorization': `Bearer ${authToken}`, 'Content-Type': 'application/json' }
+        });
+        if (response.status === 401) { handleLogout(true); return; }
+        const data = await response.json();
+        renderUsers(data.users || []);
+      } catch (error) {
+        userTableBody.innerHTML = `<tr><td colspan="6" class="py-8 text-center text-red-500">加载失败：${error.message}</td></tr>`;
+      }
+    }
+
+    async function loadMessages(userId, username) {
+      messagePanel.innerHTML = '<p class="text-gray-400 text-sm">正在加载聊天记录...</p>';
+      try {
+        const response = await fetch(`/api/users/${userId}/messages?limit=50`, {
+          headers: { 'Authorization': `Bearer ${authToken}`, 'Content-Type': 'application/json' }
+        });
+        if (response.status === 401) { handleLogout(true); return; }
+        const data = await response.json();
+        renderMessages(data.messages || [], username);
+      } catch (error) {
+        messagePanel.innerHTML = `<p class="text-red-500 text-sm">加载失败：${error.message}</p>`;
+      }
+    }
+
+    function handleLogout(forceNotice = false) {
+      localStorage.removeItem('authToken');
+      localStorage.removeItem('authUser');
+      if (forceNotice) {
+        authNotice.classList.remove('hidden');
+        userTableBody.innerHTML = '<tr><td colspan="6" class="py-8 text-center text-gray-400">请重新登录后查看</td></tr>';
+        messagePanel.innerHTML = '<p class="text-gray-400 text-sm">未登录</p>';
+        return;
+      }
+      window.location.href = 'index（心理陪伴）.html';
+    }
+
+    if (!authToken || !authUser) authNotice.classList.remove('hidden');
+    else loadUsers();
+
+    logoutBtn.addEventListener('click', () => handleLogout(false));
+  </script>
+</body>
+</html>
