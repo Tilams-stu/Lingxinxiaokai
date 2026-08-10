@@ -4,6 +4,7 @@
   <p>面向校园场景的心理陪伴与心理科普 Web 应用</p>
   <p>
     <a href="#项目简介">项目简介</a> ·
+    <a href="#界面预览">界面预览</a> ·
     <a href="#核心功能">核心功能</a> ·
     <a href="#技术架构">技术架构</a> ·
     <a href="#快速开始">快速开始</a> ·
@@ -64,6 +65,37 @@ Lingxinxiaokai/
 ├─ pytest.ini            # pytest 测试发现配置
 └─ README.md
 ```
+
+## 界面预览
+
+<table>
+  <tr>
+    <td align="center" width="50%">
+      <strong>登录与注册</strong><br><br>
+      <img src="docs/assets/screenshots/login.png" alt="聆心小开登录与注册页面" />
+    </td>
+    <td align="center" width="50%">
+      <strong>功能首页</strong><br><br>
+      <img src="docs/assets/screenshots/home.png" alt="聆心小开功能首页" />
+    </td>
+  </tr>
+  <tr>
+    <td align="center" width="50%">
+      <strong>心理科普</strong><br><br>
+      <img src="docs/assets/screenshots/psychology-info.png" alt="聆心小开心理科普页面" />
+    </td>
+    <td align="center" width="50%">
+      <strong>心理陪伴</strong><br><br>
+      <img src="docs/assets/screenshots/companion.png" alt="聆心小开心理陪伴页面" />
+    </td>
+  </tr>
+  <tr>
+    <td align="center" colspan="2">
+      <strong>管理员数据导出</strong><br><br>
+      <img src="docs/assets/screenshots/admin.png" alt="聆心小开管理员数据导出页面" width="720" />
+    </td>
+  </tr>
+</table>
 
 ## 快速开始
 

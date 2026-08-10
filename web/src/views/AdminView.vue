@@ -84,120 +84,160 @@ onMounted(async () => {
 
 <style scoped>
 .admin {
-  min-height: 100vh;
-  background: linear-gradient(160deg, #ebf0ec 0%, #f7faf8 50%, #eef5f0 100%);
-  color: #4a5d52;
+  position: relative;
+  min-height: 100dvh;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 88% 16%, rgba(82, 122, 99, 0.09), transparent 28%),
+    var(--lx-canvas);
+  color: var(--lx-text);
 }
 
 .admin-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  height: 56px;
-  padding: 0 20px;
-  background: rgba(255, 255, 255, 0.85);
-  backdrop-filter: blur(10px);
-  border-bottom: 1px solid rgba(125, 164, 141, 0.2);
+  width: min(980px, calc(100% - 48px));
+  height: 68px;
+  padding: 0 4px;
+  margin: 0 auto;
+  border-bottom: 1px solid rgba(82, 122, 99, 0.16);
 }
 
 .logo {
-  font-size: 1.1rem;
-  font-weight: 600;
+  color: var(--lx-ink);
+  font-size: 17px;
+  font-weight: 720;
+  letter-spacing: -0.02em;
 }
 
 .back-btn {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 8px 14px;
-  border: 1px solid rgba(125, 164, 141, 0.35);
-  border-radius: 20px;
-  color: #87998d;
+  gap: 8px;
+  min-height: 38px;
+  padding: 8px 13px;
+  border: 1px solid var(--lx-line);
+  border-radius: var(--lx-radius-sm);
+  color: var(--lx-muted);
+  font-size: 13px;
+  font-weight: 600;
   text-decoration: none;
-  font-size: 0.9rem;
-  transition: all 0.25s ease;
+  transition: border-color 0.2s ease, color 0.2s ease, background-color 0.2s ease;
 }
 
 .back-btn:hover {
-  border-color: #7da48d;
-  color: #4a5d52;
+  border-color: #b9cabf;
+  background: rgba(255, 253, 248, 0.75);
+  color: var(--lx-ink);
 }
 
 .admin-main {
-  padding: 48px 24px;
-  max-width: 480px;
+  width: min(980px, calc(100% - 48px));
+  padding: clamp(58px, 10vh, 104px) 4px 60px;
   margin: 0 auto;
 }
 
 .admin-card {
-  background: rgba(255, 255, 255, 0.9);
-  border-radius: 16px;
-  padding: 24px;
-  box-shadow: 0 4px 20px rgba(74, 93, 82, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.9);
+  position: relative;
+  max-width: 680px;
+  padding: clamp(28px, 5vw, 48px);
+  overflow: hidden;
+  border: 1px solid var(--lx-line);
+  border-radius: var(--lx-radius-lg);
+  background: rgba(255, 253, 248, 0.94);
+  box-shadow: var(--lx-shadow-md);
+}
+
+.admin-card::after {
+  position: absolute;
+  right: -70px;
+  bottom: -112px;
+  width: 220px;
+  height: 220px;
+  border: 1px solid rgba(82, 122, 99, 0.1);
+  border-radius: 54% 46% 56% 44%;
+  content: '';
+  pointer-events: none;
+  transform: rotate(24deg);
 }
 
 .admin-card h2 {
-  margin: 0 0 12px;
-  font-size: 1.15rem;
+  position: relative;
+  z-index: 1;
+  margin: 0 0 14px;
+  color: var(--lx-ink);
+  font-size: clamp(25px, 4vw, 34px);
+  font-weight: 740;
+  letter-spacing: -0.04em;
 }
 
 .desc {
-  margin: 0 0 20px;
-  font-size: 0.9rem;
-  color: #87998d;
-  line-height: 1.5;
+  position: relative;
+  z-index: 1;
+  max-width: 36em;
+  margin: 0 0 28px;
+  color: var(--lx-text);
+  font-size: 14px;
+  line-height: 1.75;
 }
 
 .export-btn {
+  position: relative;
+  z-index: 1;
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 8px;
-  width: 100%;
-  padding: 14px 20px;
-  border: none;
-  border-radius: 12px;
-  background: linear-gradient(135deg, #658a74, #7da48d);
-  color: #fff;
-  font-size: 0.95rem;
-  font-weight: 500;
+  width: min(100%, 320px);
+  min-height: 48px;
+  padding: 12px 18px;
+  border-radius: var(--lx-radius-md);
+  background: var(--lx-accent);
+  color: #fffdf8;
+  font-size: 14px;
+  font-weight: 680;
   cursor: pointer;
-  transition: all 0.25s ease;
+  box-shadow: 0 10px 22px rgba(63, 102, 81, 0.2);
+  transition: background-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
 }
 
 .export-btn:hover:not(:disabled) {
+  background: var(--lx-accent-strong);
   transform: translateY(-1px);
-  box-shadow: 0 6px 16px rgba(125, 164, 141, 0.35);
+  box-shadow: 0 13px 28px rgba(63, 102, 81, 0.25);
+}
+
+.export-btn:active:not(:disabled) {
+  transform: translateY(1px);
 }
 
 .export-btn:disabled {
-  opacity: 0.7;
+  opacity: 0.55;
   cursor: not-allowed;
   transform: none;
 }
 
-/* ====== 多端适配 ====== */
-/* 大平板/iPad（769-1024px） */
-@media (min-width: 769px) and (max-width: 1024px) {
-  .admin-main { max-width: 640px; padding: 48px 32px; }
-}
-/* 小平板/大手机（481-768px） */
-@media (min-width: 481px) and (max-width: 768px) {
-  .admin-main { max-width: 92%; padding: 40px 20px; }
-}
-/* 手机（<=480px） */
 @media (max-width: 480px) {
-  .admin-main { padding: 32px 16px; max-width: 100%; }
-  .admin-card { padding: 20px 18px; border-radius: 14px; }
-  .admin-card h2 { font-size: 1.05rem; }
-  .desc { font-size: 0.85rem; }
-  .export-btn { padding: 12px 16px; font-size: 0.9rem; }
-  .logo { font-size: 1rem; }
-  .back-btn { padding: 6px 12px; font-size: 0.82rem; }
-}
-/* 超大屏（>=1400px） */
-@media (min-width: 1400px) {
-  .admin-main { max-width: 640px; }
+  .admin-header,
+  .admin-main {
+    width: calc(100% - 28px);
+  }
+
+  .admin-header {
+    height: 62px;
+  }
+
+  .admin-main {
+    padding: 38px 2px;
+  }
+
+  .admin-card {
+    padding: 25px 20px;
+  }
+
+  .export-btn {
+    width: 100%;
+  }
 }
 </style>

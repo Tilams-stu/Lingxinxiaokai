@@ -467,6 +467,7 @@
       .welcome-card { margin-top: 12px; padding: 16px; }
     }
   </style>
+  <link rel="stylesheet" href="/assets/chat-theme.css">
 </head>
 <body>
   <div id="canvas-container"></div>
@@ -964,7 +965,7 @@
         const m = String(dt.getMonth() + 1).padStart(2, '0');
         const d = String(dt.getDate()).padStart(2, '0');
         const ds = `${y}-${m}-${d}`;
-        const mood = map[ds] || '—';
+        const mood = map[ds] || '-';
         const label = `${dt.getMonth() + 1}/${dt.getDate()}`;
         return `<div class="cal-day"><span>${label}</span>${mood}</div>`;
       }).join('');
