@@ -79,176 +79,311 @@ async function logout() {
 
 <style scoped>
 .home {
-  min-height: 100vh;
+  position: relative;
+  isolation: isolate;
   width: 100%;
-  background: linear-gradient(160deg, #ebf0ec 0%, #f7faf8 50%, #eef5f0 100%);
-  color: #4a5d52;
+  min-height: 100dvh;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 8% 8%, rgba(82, 122, 99, 0.1), transparent 30%),
+    var(--lx-canvas);
+  color: var(--lx-text);
+}
+
+.home::before,
+.home::after {
+  position: fixed;
+  z-index: -1;
+  content: '';
+  pointer-events: none;
+}
+
+.home::before {
+  top: 18%;
+  right: -7vw;
+  width: min(34vw, 480px);
+  aspect-ratio: 0.76;
+  border: 1px solid rgba(82, 122, 99, 0.1);
+  border-radius: 55% 45% 58% 42%;
+  transform: rotate(24deg);
+}
+
+.home::after {
+  top: 29%;
+  right: 4vw;
+  width: min(20vw, 280px);
+  height: 1px;
+  background: rgba(82, 122, 99, 0.12);
+  transform: rotate(-51deg);
+  transform-origin: right center;
 }
 
 .home-header {
-  position: fixed;
+  position: relative;
   top: 0;
-  left: 0;
-  right: 0;
-  height: 56px;
+  z-index: 10;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 20px;
-  background: rgba(255, 255, 255, 0.85);
-  backdrop-filter: blur(10px);
-  border-bottom: 1px solid rgba(125, 164, 141, 0.2);
-  z-index: 100;
+  width: min(1120px, calc(100% - 48px));
+  height: 68px;
+  padding: 0 4px;
+  margin: 0 auto;
+  border-bottom: 1px solid rgba(82, 122, 99, 0.16);
 }
 
 .logo {
-  font-size: 1.15rem;
-  font-weight: 600;
+  color: var(--lx-ink);
+  font-size: 17px;
+  font-weight: 720;
+  letter-spacing: -0.02em;
 }
 
 .logo .accent {
-  color: #7da48d;
+  color: var(--lx-accent);
 }
 
 .logout-btn {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 8px 14px;
-  border: 1px solid rgba(125, 164, 141, 0.35);
-  border-radius: 20px;
+  gap: 8px;
+  min-height: 38px;
+  padding: 8px 13px;
+  border: 1px solid var(--lx-line);
+  border-radius: var(--lx-radius-sm);
   background: transparent;
-  color: #87998d;
-  font-size: 0.9rem;
+  color: var(--lx-muted);
+  font-size: 13px;
+  font-weight: 600;
   cursor: pointer;
-  transition: all 0.25s ease;
+  transition: border-color 0.2s ease, color 0.2s ease, background-color 0.2s ease;
 }
 
 .logout-btn:hover {
-  border-color: #7da48d;
-  color: #4a5d52;
+  border-color: #b9cabf;
+  background: rgba(255, 253, 248, 0.75);
+  color: var(--lx-ink);
 }
 
 .home-main {
-  padding: 80px 24px 48px;
-  max-width: 480px;
+  display: grid;
+  width: min(1120px, calc(100% - 48px));
+  padding: clamp(70px, 10vh, 116px) 4px 64px;
   margin: 0 auto;
+  grid-template-columns: minmax(280px, 0.8fr) minmax(420px, 1.2fr);
+  column-gap: clamp(56px, 8vw, 112px);
+  row-gap: 20px;
 }
 
 .intro {
-  text-align: center;
-  margin-bottom: 40px;
+  position: relative;
+  align-self: start;
+  padding: 12px 0 28px;
+}
+
+.intro::before {
+  display: block;
+  width: 46px;
+  height: 3px;
+  margin-bottom: 24px;
+  border-radius: 3px;
+  background: var(--lx-accent);
+  content: '';
 }
 
 .intro h1 {
-  font-size: 1.6rem;
-  font-weight: 600;
-  margin: 0 0 8px;
+  max-width: 8ch;
+  margin: 0 0 18px;
+  color: var(--lx-ink);
+  font-size: clamp(42px, 5.2vw, 68px);
+  font-weight: 760;
+  letter-spacing: -0.065em;
+  line-height: 1.03;
 }
 
 .intro p {
-  font-size: 0.95rem;
-  color: #87998d;
+  max-width: 18em;
   margin: 0;
+  color: var(--lx-text);
+  font-size: clamp(15px, 1.5vw, 18px);
+  line-height: 1.8;
 }
 
 .section-label {
-  font-size: 0.7rem;
-  font-weight: 600;
-  letter-spacing: 1.5px;
-  color: #87998d;
-  margin: 0 0 12px;
+  margin: 0 0 14px;
+  color: var(--lx-muted);
+  font-size: 13px;
+  font-weight: 650;
+  letter-spacing: 0.06em;
 }
 
 .nav-section {
-  margin-bottom: 28px;
+  grid-column: 2;
+  margin-bottom: 12px;
 }
 
 .nav-cards {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
+  display: grid;
+  gap: 14px;
 }
 
 .nav-card {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 16px;
-  padding: 18px 20px;
-  background: rgba(255, 255, 255, 0.8);
-  border-radius: 16px;
-  border: 1px solid rgba(255, 255, 255, 0.9);
-  box-shadow: 0 4px 20px rgba(74, 93, 82, 0.06);
-  text-decoration: none;
+  gap: 18px;
+  min-height: 118px;
+  padding: 24px;
+  overflow: hidden;
+  border: 1px solid var(--lx-line);
+  border-radius: var(--lx-radius-lg);
+  background: rgba(255, 253, 248, 0.92);
   color: inherit;
-  transition: all 0.3s ease;
+  text-decoration: none;
+  box-shadow: var(--lx-shadow-sm);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+}
+
+.nav-card::after {
+  position: absolute;
+  right: -38px;
+  bottom: -52px;
+  width: 116px;
+  height: 116px;
+  border: 1px solid rgba(82, 122, 99, 0.1);
+  border-radius: 52% 48% 56% 44%;
+  content: '';
+  transform: rotate(28deg);
 }
 
 .nav-card:hover {
-  border-color: rgba(125, 164, 141, 0.4);
-  box-shadow: 0 8px 28px rgba(125, 164, 141, 0.12);
-  transform: translateY(-2px);
+  border-color: #b8cbbf;
+  box-shadow: 0 14px 34px rgba(36, 56, 46, 0.11);
+  transform: translateY(-1px);
+}
+
+.nav-card:active {
+  transform: translateY(1px);
 }
 
 .nav-icon {
-  width: 44px;
-  height: 44px;
+  display: grid;
+  width: 50px;
+  height: 50px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid rgba(82, 122, 99, 0.12);
+  border-radius: var(--lx-radius-md);
+  background: var(--lx-accent-soft);
+  color: var(--lx-accent-strong);
+  font-size: 18px;
+}
+
+.nav-body {
   display: flex;
-  align-items: center;
-  justify-content: center;
-  background: #e8f0ed;
-  border-radius: 12px;
-  color: #7da48d;
-  font-size: 1.1rem;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 5px;
 }
 
 .nav-body h3 {
-  font-size: 1rem;
-  font-weight: 600;
-  margin: 0 0 4px;
+  margin: 0;
+  color: var(--lx-ink);
+  font-size: 17px;
+  font-weight: 700;
 }
 
 .nav-body p {
-  font-size: 0.85rem;
-  color: #87998d;
   margin: 0;
+  color: var(--lx-muted);
+  font-size: 13.5px;
+  line-height: 1.6;
 }
 
 .nav-arrow {
+  position: relative;
+  z-index: 1;
   margin-left: auto;
-  color: #87998d;
-  font-size: 0.85rem;
+  color: var(--lx-accent);
+  font-size: 13px;
+}
+
+.admin-card {
+  min-height: 92px;
+  padding-block: 18px;
+  background: rgba(243, 247, 243, 0.88);
+  box-shadow: none;
 }
 
 .admin-card .nav-icon {
-  background: #f0e8e8;
-  color: #a47d7d;
+  background: transparent;
 }
 
-/* ====== 多端适配 ====== */
-/* 大平板/iPad（769-1024px） */
-@media (min-width: 769px) and (max-width: 1024px) {
-  .home-main { max-width: 640px; padding: 80px 32px 56px; }
+@media (max-width: 840px) {
+  .home-header,
+  .home-main {
+    width: min(680px, calc(100% - 40px));
+  }
+
+  .home-main {
+    padding-top: 54px;
+    grid-template-columns: 1fr;
+    row-gap: 30px;
+  }
+
+  .intro,
+  .nav-section {
+    grid-column: 1;
+  }
+
+  .intro {
+    padding-bottom: 0;
+  }
+
+  .intro h1 {
+    max-width: none;
+  }
 }
-/* 小平板（481-768px） */
-@media (min-width: 481px) and (max-width: 768px) {
-  .home-main { max-width: 92%; padding: 76px 20px 48px; }
-  .intro h1 { font-size: 1.5rem; }
-}
-/* 手机（<=480px） */
+
 @media (max-width: 480px) {
-  .home-main { padding: 70px 16px 40px; max-width: 100%; }
-  .intro { margin-bottom: 28px; }
-  .intro h1 { font-size: 1.35rem; }
-  .intro p { font-size: 0.88rem; }
-  .nav-card { padding: 14px 16px; gap: 12px; border-radius: 14px; }
-  .nav-icon { width: 38px; height: 38px; font-size: 1rem; border-radius: 10px; }
-  .nav-body h3 { font-size: 0.95rem; }
-  .nav-body p { font-size: 0.8rem; }
-  .logout-btn { padding: 6px 12px; font-size: 0.82rem; }
-}
-/* 超大屏（>=1400px） */
-@media (min-width: 1400px) {
-  .home-main { max-width: 640px; }
+  .home-header,
+  .home-main {
+    width: calc(100% - 28px);
+  }
+
+  .home-header {
+    height: 62px;
+  }
+
+  .home-main {
+    padding: 38px 2px 36px;
+    row-gap: 24px;
+  }
+
+  .intro::before {
+    margin-bottom: 18px;
+  }
+
+  .intro h1 {
+    margin-bottom: 12px;
+    font-size: 39px;
+  }
+
+  .nav-card {
+    min-height: 104px;
+    gap: 14px;
+    padding: 19px 17px;
+  }
+
+  .nav-icon {
+    width: 44px;
+    height: 44px;
+    font-size: 16px;
+  }
+
+  .admin-card {
+    min-height: 88px;
+  }
 }
 </style>
