@@ -4,6 +4,7 @@
   <p>面向校园场景的心理陪伴与心理科普 Web 应用</p>
   <p>
     <a href="#项目简介">项目简介</a> ·
+    <a href="#界面预览">界面预览</a> ·
     <a href="#核心功能">核心功能</a> ·
     <a href="#技术架构">技术架构</a> ·
     <a href="#快速开始">快速开始</a> ·
@@ -16,6 +17,37 @@
 聆心小开是一个轻量的校园心理服务应用，提供心理陪伴、心理科普、情绪分析和聊天记录管理等功能。项目采用 Flask 单体后端与 SQLite 数据库，前端由 Vue 3 页面和两个传统聊天页面共同组成，AI 能力通过服务端受控接入 DeepSeek。
 
 项目保留了简单直接的部署方式：Vue 构建产物随仓库保存，由 Flask 统一提供页面、接口和静态资源，适合本地运行和单机部署。
+
+## 界面预览
+
+<table>
+  <tr>
+    <td align="center" width="50%">
+      <strong>登录与注册</strong><br><br>
+      <img src="docs/assets/screenshots/login.png" alt="聆心小开登录与注册页面" />
+    </td>
+    <td align="center" width="50%">
+      <strong>功能首页</strong><br><br>
+      <img src="docs/assets/screenshots/home.png" alt="聆心小开功能首页" />
+    </td>
+  </tr>
+  <tr>
+    <td align="center" width="50%">
+      <strong>心理科普</strong><br><br>
+      <img src="docs/assets/screenshots/psychology-info.png" alt="聆心小开心理科普页面" />
+    </td>
+    <td align="center" width="50%">
+      <strong>心理陪伴</strong><br><br>
+      <img src="docs/assets/screenshots/companion.png" alt="聆心小开心理陪伴页面" />
+    </td>
+  </tr>
+  <tr>
+    <td align="center" colspan="2">
+      <strong>管理员数据导出</strong><br><br>
+      <img src="docs/assets/screenshots/admin.png" alt="聆心小开管理员数据导出页面" width="720" />
+    </td>
+  </tr>
+</table>
 
 ## 核心功能
 
