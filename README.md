@@ -18,37 +18,6 @@
 
 项目保留了简单直接的部署方式：Vue 构建产物随仓库保存，由 Flask 统一提供页面、接口和静态资源，适合本地运行和单机部署。
 
-## 界面预览
-
-<table>
-  <tr>
-    <td align="center" width="50%">
-      <strong>登录与注册</strong><br><br>
-      <img src="docs/assets/screenshots/login.png" alt="聆心小开登录与注册页面" />
-    </td>
-    <td align="center" width="50%">
-      <strong>功能首页</strong><br><br>
-      <img src="docs/assets/screenshots/home.png" alt="聆心小开功能首页" />
-    </td>
-  </tr>
-  <tr>
-    <td align="center" width="50%">
-      <strong>心理科普</strong><br><br>
-      <img src="docs/assets/screenshots/psychology-info.png" alt="聆心小开心理科普页面" />
-    </td>
-    <td align="center" width="50%">
-      <strong>心理陪伴</strong><br><br>
-      <img src="docs/assets/screenshots/companion.png" alt="聆心小开心理陪伴页面" />
-    </td>
-  </tr>
-  <tr>
-    <td align="center" colspan="2">
-      <strong>管理员数据导出</strong><br><br>
-      <img src="docs/assets/screenshots/admin.png" alt="聆心小开管理员数据导出页面" width="720" />
-    </td>
-  </tr>
-</table>
-
 ## 核心功能
 
 - **账号与会话**：学生可以使用称呼、学号和密码注册，通过 Flask Session Cookie 保持登录状态。
@@ -96,6 +65,37 @@ Lingxinxiaokai/
 ├─ pytest.ini            # pytest 测试发现配置
 └─ README.md
 ```
+
+## 界面预览
+
+<table>
+  <tr>
+    <td align="center" width="50%">
+      <strong>登录与注册</strong><br><br>
+      <img src="docs/assets/screenshots/login.png" alt="聆心小开登录与注册页面" />
+    </td>
+    <td align="center" width="50%">
+      <strong>功能首页</strong><br><br>
+      <img src="docs/assets/screenshots/home.png" alt="聆心小开功能首页" />
+    </td>
+  </tr>
+  <tr>
+    <td align="center" width="50%">
+      <strong>心理科普</strong><br><br>
+      <img src="docs/assets/screenshots/psychology-info.png" alt="聆心小开心理科普页面" />
+    </td>
+    <td align="center" width="50%">
+      <strong>心理陪伴</strong><br><br>
+      <img src="docs/assets/screenshots/companion.png" alt="聆心小开心理陪伴页面" />
+    </td>
+  </tr>
+  <tr>
+    <td align="center" colspan="2">
+      <strong>管理员数据导出</strong><br><br>
+      <img src="docs/assets/screenshots/admin.png" alt="聆心小开管理员数据导出页面" width="720" />
+    </td>
+  </tr>
+</table>
 
 ## 快速开始
 
