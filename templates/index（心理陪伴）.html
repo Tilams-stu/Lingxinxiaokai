@@ -15,7 +15,7 @@
   <meta name="apple-mobile-web-app-title" content="聆心小开">
   <title>聆心小开 · 倾诉空间</title>
   <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" rel="stylesheet">
-  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <script src="/assets/chat-api.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
   <style>
@@ -649,7 +649,6 @@
     const sendBtn = document.getElementById('send');
     const charCount = document.getElementById('charCount');
     const scrollBtm = document.getElementById('scrollBtm');
-    const SYS = `你是开开，像朋友一样陪聊：接住对方的情绪，轻轻呼应 TA 说的话，温暖、不评判。每次回复全文不超过50字；少讲理论、不重复大道理。若谈及自杀或自残，先表达关心并建议向身边人或专业援助求助。`;
     const MAX_HIST = 20;
     const LS_COMPANION_SID = 'lx_companion_session_id';
     let history = [];
@@ -709,12 +708,7 @@
       d.textContent = s;
       return d.innerHTML;
     }
-    function md(s) {
-      if (typeof marked !== 'undefined') {
-        try { return marked.parse(s || ''); } catch (e) { return esc(s); }
-      }
-      return esc(s).replace(/\n/g, '<br>');
-    }
+    function md(s) { return esc(s).replace(/\n/g, '<br>'); }
     function getCurrentTime() {
       return new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
     }
@@ -764,6 +758,8 @@
           <div class="msg-body">${role === 'assistant' ? md(content) : esc(content).replace(/\n/g, '<br>')}</div>
           <div class="msg-time">${getCurrentTime()}</div>
         </div>`;
+      row.querySelector('.msg-body').textContent = content;
+      row.querySelector('.msg-body').style.whiteSpace = 'pre-wrap';
       chatInner.appendChild(row);
       scrollChatBottom(true);
     }
@@ -803,16 +799,15 @@
 
       let full = '';
       try {
-        const r = await fetch('/api/deepseek/chat', {
+        const r = await fetch('/api/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           credentials: 'include',
           cache: 'no-store',
           body: JSON.stringify({
+            mode: 'companion',
             session_id: currentSessionId,
-            messages: [{ role: 'system', content: SYS }, ...history.slice(-MAX_HIST)],
-            max_tokens: 512,
-            temperature: 0.7,
+            messages: history.slice(-MAX_HIST),
             stream: true
           })
         });
@@ -843,11 +838,12 @@
             if (line.startsWith('data: ') && line !== 'data: [DONE]') {
               try {
                 const j = JSON.parse(line.slice(6));
-                const d = j?.choices?.[0]?.delta;
-                const piece = (d && (d.content || d.reasoning_content)) || '';
+                if (j?.type === 'error') throw new Error(j.message || '服务暂时不可用');
+                const piece = j?.type === 'delta' ? j.content : '';
                 if (piece) {
                   full += piece;
-                  body.innerHTML = md(full);
+                  body.textContent = full;
+                  body.style.whiteSpace = 'pre-wrap';
                   timeEl.textContent = getCurrentTime();
                 }
               } catch (_) {}
@@ -855,7 +851,8 @@
           }
           scrollChatBottom(false);
         }
-        body.innerHTML = md(full);
+        body.textContent = full;
+        body.style.whiteSpace = 'pre-wrap';
         timeEl.textContent = getCurrentTime();
         if (!full.trim()) {
           const err = '未收到模型回复，请检查接口配置或稍后再试。';
@@ -879,29 +876,17 @@
       document.getElementById('emotionTip').textContent = '分析中…';
       const text = history.filter(m => m.role === 'user').map(m => m.content).join(' ') || '暂无对话';
       try {
-        const r = await fetch('/api/deepseek/chat', {
+        const r = await fetch('/api/emotions/analyze', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           credentials: 'include',
           cache: 'no-store',
-          body: JSON.stringify({
-            skip_persist: true,
-            messages: [
-              { role: 'system', content: '输出JSON，键为 happy,sad,angry,calm,surprised,fear，值0-1。只返回JSON。' },
-              { role: 'user', content: '分析以下对话的情绪，输出JSON：' + text.slice(0, 500) }
-            ],
-            max_tokens: 200,
-            stream: false
-          })
+          body: JSON.stringify({ mode: 'companion', text: text.slice(0, 500) })
         });
         const data = await r.json().catch(() => ({}));
         if (r.status === 401) { location.href = '/login'; return; }
-        const raw = data?.choices?.[0]?.message?.content || data?.content || '';
         let emo = { happy: 0.3, sad: 0.2, angry: 0.1, calm: 0.4, surprised: 0.2, fear: 0.1 };
-        try {
-          const j = JSON.parse(raw.replace(/```\w*\n?|\n?```/g, '').trim());
-          if (j && typeof j === 'object') emo = { ...emo, ...j };
-        } catch (_) {}
+        if (data.scores && typeof data.scores === 'object') emo = { ...emo, ...data.scores };
         const names = { happy: '开心', sad: '悲伤', angry: '愤怒', calm: '平静', surprised: '惊讶', fear: '恐惧' };
         const vals = Object.entries(emo).map(([k, v]) => ({
           name: names[k] || k,
@@ -1087,7 +1072,7 @@
       renderWelcome();
     };
 
-    bindTap(document.getElementById('userProfile'), () => { location.href = '/profile'; });
+    bindTap(document.getElementById('userProfile'), () => { location.href = '/home'; });
 
     sendBtn.onclick = () => {
       const t = input.value.trim();

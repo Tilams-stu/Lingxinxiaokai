@@ -1,130 +1,53 @@
-# API 密钥安全配置指南
+# API 与数据安全说明
 
-## 🔐 重要安全提醒
+## 身份和权限
 
-**您之前分享的API密钥已经暴露，请立即采取以下措施：**
+- 认证只使用带签名的 Flask Session Cookie，不在浏览器 localStorage 保存 token，也不接受 Bearer Token 登录。
+- 公开注册固定创建普通用户；管理员只通过服务器本地 Flask CLI 授予或撤销。
+- 所有隐私接口在后端执行权限检查。隐藏按钮或 Vue 路由守卫只改善体验，不是安全边界。
+- 普通用户只能读取和删除自己的聊天；全量用户、他人消息和导出仅管理员可用。
+- 管理员导出包含学号和聊天正文，应按敏感个人信息管理。
 
-1. **立即撤销暴露的密钥**：`sk-8eaa9ad64b5d4c58a0ea1be29e8081d1`
-2. **生成新的API密钥**
-3. **按照本指南安全配置**
+## 密钥和配置
 
-## 📁 配置文件说明
+- `.env`、数据库、备份和导出文件不得提交 Git、发送到群聊或放入静态目录。
+- `SECRET_KEY` 使用至少 32 字节密码学随机值；轮换后所有旧 Session 会失效。
+- DeepSeek 密钥如曾出现在源码、文档、截图或 Git 历史中，必须在平台侧撤销并重新生成。
+- 非测试启动发现空值或已知占位值会拒绝运行。
+- 正式 HTTPS 设置 `SESSION_COOKIE_SECURE=true`，代理头信任默认保持关闭。
 
-### 1. config.js
-- 用于前端JavaScript项目的配置
-- **注意**：不要在前端直接暴露API密钥
-- 建议仅用于开发环境或通过后端代理
+## AI 接口边界
 
-### 2. .env.example
-- 环境变量配置模板
-- 复制为 `.env` 文件并填入真实值
-- 适用于Node.js后端项目
+- 浏览器只能调用受控的 `/api/chat` 和 `/api/emotions/analyze`。
+- `system` 消息会被拒绝；提示词、模型、温度和最大令牌数由 `templates/ai_service.py` 控制。
+- 不恢复通用 DeepSeek/Hiagent 代理、TTS、卡片生成或允许跳过持久化的接口。
+- 输入角色、数量和长度均有限制。所有 AI 输出和用户名在浏览器按纯文本显示，禁止未经清洗的 `innerHTML`。
+- 服务端检测明确自伤/自杀表达，命中后跳过上游并返回固定干预信息。规则和联系方式更新必须同时修改测试和文档。
 
-## 🛡️ 安全最佳实践
+## 隐私与日志
 
-### 前端项目安全配置
+- 聊天正文只保存在 SQLite，不增加 JSONL 双写、请求正文日志或浏览器地理位置采集。
+- 情绪分析不另行保存；但若用户从聊天历史选取文本，它本身可能已经属于聊天记录。
+- 错误日志只记录排障所需元数据，不记录密码、密钥、Cookie、聊天正文或上游完整响应。
+- 删除用户聊天是实际数据库删除，执行前产品层面应向用户说明不可恢复性；备份中的历史数据仍受备份保留政策约束。
 
-```javascript
-// 推荐：通过后端API代理
-const response = await fetch('/api/chat', {
-    method: 'POST',
-    headers: {
-        'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({
-        message: userMessage
-    })
-});
+## 限流
+
+| 接口 | 限制 |
+| --- | --- |
+| 注册 | 每 IP 每小时 5 次 |
+| 登录 | 每 IP 每分钟 10 次 |
+| 聊天 | 每用户每分钟 30 次 |
+| 情绪分析 | 每用户每分钟 10 次 |
+| 健康检查 | 不限流 |
+
+当前限流存储是进程内状态，因此生产基线保持一个 Gunicorn worker。若未来扩展为多 worker/多实例，必须先接入可信共享限流存储并补充测试。
+
+## 发布安全检查
+
+```powershell
+rg -n --hidden -g '!/.git/**' -g '!web/node_modules/**' -g '!templates/.venv/**' '(sk-[A-Za-z0-9_-]{16,}|Bearer\s+[A-Za-z0-9._-]{16,}|password\s*=|api[_-]?key\s*=)' .
+git diff --check
 ```
 
-### 后端项目安全配置
-
-```javascript
-// 使用环境变量
-require('dotenv').config();
-
-const DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY;
-
-// API调用示例
-const response = await fetch('https://api.deepseek.com/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-        'Authorization': `Bearer ${DEEPSEEK_API_KEY}`,
-        'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({
-        model: 'deepseek-chat',
-        messages: [{
-            role: 'user',
-            content: userMessage
-        }]
-    })
-});
-```
-
-## 📋 配置步骤
-
-### 步骤1：创建 .env 文件
-```bash
-cp .env.example .env
-```
-
-### 步骤2：填入真实配置
-编辑 `.env` 文件：
-```
-DEEPSEEK_API_KEY=sk-your-new-api-key-here
-```
-
-### 步骤3：添加到 .gitignore
-```
-# 环境变量文件
-.env
-config.js
-```
-
-## ⚠️ 安全检查清单
-
-- [ ] 已撤销暴露的API密钥
-- [ ] 已生成新的API密钥
-- [ ] 配置文件已添加到 .gitignore
-- [ ] 不在前端代码中直接使用API密钥
-- [ ] 使用环境变量存储敏感信息
-- [ ] 设置适当的API密钥权限和限制
-
-## 🔧 集成到现有项目
-
-### 修改 index（心理陪伴）.html
-
-如果需要在前端调用AI API，建议创建后端接口：
-
-```html
-<script>
-// 不要直接在前端使用API密钥
-// 通过后端API调用
-async function callAI(message) {
-    try {
-        const response = await fetch('/api/deepseek-chat', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({ message })
-        });
-        
-        const data = await response.json();
-        return data.response;
-    } catch (error) {
-        console.error('AI调用失败:', error);
-        return '抱歉，AI服务暂时不可用。';
-    }
-}
-</script>
-```
-
-## 📞 技术支持
-
-如果在配置过程中遇到问题，请检查：
-1. API密钥格式是否正确
-2. 网络连接是否正常
-3. API配额是否充足
-4. 请求格式是否符合DeepSeek API文档
+扫描结果需要人工判断；`.env.example` 的变量名和测试中对已删除接口的断言可能是合理匹配。绝不能通过把真实密钥改成另一个真实密钥来“修复”扫描结果。

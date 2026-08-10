@@ -17,7 +17,7 @@
       <section class="nav-section">
         <h2 class="section-label">心理聊愈</h2>
         <div class="nav-cards">
-          <a class="nav-card" href="/index（心理科普）.html">
+          <a class="nav-card" href="/info">
             <span class="nav-icon"><i class="fa-solid fa-lightbulb"></i></span>
             <div class="nav-body">
               <h3>解惑助手</h3>
@@ -25,7 +25,7 @@
             </div>
             <i class="fa-solid fa-chevron-right nav-arrow"></i>
           </a>
-          <a class="nav-card" href="/index（心理陪伴）.html">
+          <a class="nav-card" href="/companion">
             <span class="nav-icon"><i class="fa-solid fa-comments"></i></span>
             <div class="nav-body">
               <h3>倾诉空间</h3>
@@ -48,17 +48,6 @@
         </a>
       </section>
 
-      <section class="nav-section">
-        <h2 class="section-label">应用</h2>
-        <a class="nav-card" href="/聆心小开.apk" download="聆心小开.apk">
-          <span class="nav-icon"><i class="fa-solid fa-mobile-screen"></i></span>
-          <div class="nav-body">
-            <h3>下载 APP</h3>
-            <p>Android · 随时随地使用</p>
-          </div>
-          <i class="fa-solid fa-download nav-arrow"></i>
-        </a>
-      </section>
     </main>
   </div>
 </template>

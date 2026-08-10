@@ -10,8 +10,8 @@
 
         <div class="auth-toggle" id="auth-toggle">
           <div class="toggle-slider"></div>
-          <div class="toggle-btn" :class="{ active: mode === 'login' }" @click="switchMode('login')">登录</div>
-          <div class="toggle-btn" :class="{ active: mode === 'register' }" @click="switchMode('register')">注册</div>
+          <button type="button" class="toggle-btn" :class="{ active: mode === 'login' }" @click="switchMode('login')">登录</button>
+          <button type="button" class="toggle-btn" :class="{ active: mode === 'register' }" @click="switchMode('register')">注册</button>
         </div>
 
         <form id="login-form" @submit.prevent="submit">
@@ -93,7 +93,7 @@ async function submit() {
       }),
     })
     const data = await res.json().catch(() => ({}))
-    if (!res.ok) throw new Error(data?.message || '登录失败')
+    if (!res.ok) throw new Error(data?.message || (res.status === 401 ? '称呼、学号或密码错误' : '请求未成功，请稍后重试'))
 
     const redirect = (route.query.redirect as string) || '/home'
     cardEl.value?.classList.add('fade-out')
@@ -112,7 +112,7 @@ async function submit() {
       }
     }, 2500)
   } catch (e: any) {
-    error.value = e?.message || '登录失败'
+    error.value = e?.name === 'TypeError' ? '无法连接服务，请确认后端已启动。' : (e?.message || '请求失败，请稍后重试')
   } finally {
     submitting.value = false
   }
@@ -158,7 +158,7 @@ function initThree(): ThreeCtx | null {
 
   const leafGroup = new THREE.Group()
   const velocities: Array<{ x: number; y: number; z: number }> = []
-  const particleCount = 35000
+  const particleCount = window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 6000
   const positions = new Float32Array(particleCount * 3)
   const colors = new Float32Array(particleCount * 3)
 
@@ -337,7 +337,9 @@ function initThree(): ThreeCtx | null {
 }
 
 onMounted(() => {
-  threeCtx = initThree()
+  if (window.WebGLRenderingContext && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    threeCtx = initThree()
+  }
 })
 onBeforeUnmount(() => {
   threeCtx?.dispose()

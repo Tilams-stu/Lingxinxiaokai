@@ -50,3 +50,5 @@ templates/venv/
 **/node_modules/
 **/*_venv/
 templates/__pycache__/
+.pytest_tmp/
+templates/.pytest_tmp/
