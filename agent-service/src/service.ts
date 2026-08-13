@@ -26,6 +26,11 @@ export function buildModelContext(context: ContextResult): string {
   ].join('\n');
 }
 
+export function assistantTerminalFailure(message: { stopReason: string; errorMessage?: string }): string | undefined {
+  if (message.stopReason !== 'error' && message.stopReason !== 'aborted') return undefined;
+  return message.errorMessage ?? 'agent unavailable';
+}
+
 function toSse(response: ServerResponse, event: string, payload: unknown): void {
   response.write(`event: ${event}\ndata: ${JSON.stringify(payload)}\n\n`);
 }
@@ -77,7 +82,10 @@ async function* piTurn(request: TurnRequest, apiKey: string): AsyncIterable<Turn
       if (update.type === 'thinking_delta') queue.push({ type: 'analysis', content: update.delta });
       if (update.type === 'text_delta') queue.push({ type: 'delta', content: update.delta });
     }
-    if (event.type === 'message_end' && event.message.role === 'assistant' && event.message.stopReason === 'error') queue.push({ type: 'error', message: event.message.errorMessage ?? 'agent unavailable' });
+    if (event.type === 'message_end' && event.message.role === 'assistant') {
+      const failure = assistantTerminalFailure(event.message);
+      if (failure) queue.push({ type: 'error', message: failure });
+    }
   });
   void agent.prompt(buildModelContext(context)).catch((error: unknown) => queue.push({ type: 'error', message: error instanceof Error ? error.message : 'agent unavailable' })).finally(() => queue.close());
   yield* queue.iterate();

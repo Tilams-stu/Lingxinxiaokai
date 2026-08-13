@@ -15,7 +15,7 @@
 1. RED: `node --test test\\*.test.mjs` before implementation failed because `dist/context.js`, `dist/model.js`, `dist/safety.js`, and `dist/tools.js` did not yet exist.
 2. GREEN: `npm.cmd test`
 
-Result: 17 passed, 0 failed. The command runs TypeScript compilation followed by all Node tests.
+Result: 18 passed, 0 failed. The command runs TypeScript compilation followed by all Node tests.
 
 ## Concerns
 

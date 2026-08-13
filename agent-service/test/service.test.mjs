@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { once } from 'node:events';
-import { buildModelContext, createService } from '../dist/service.js';
+import { assistantTerminalFailure, buildModelContext, createService } from '../dist/service.js';
 
 async function start(service) {
   const server = service.listen(0, '127.0.0.1');
@@ -47,6 +47,10 @@ test('buildModelContext includes summary, both speaker roles, latest state snaps
   assert.match(modelContext, /助手: I hear you/);
   assert.match(modelContext, /"mood":"anxious"/);
   assert.match(modelContext, /What should I do now/);
+});
+
+test('assistantTerminalFailure maps an aborted Pi assistant turn to an SSE error message', () => {
+  assert.equal(assistantTerminalFailure({ stopReason: 'aborted', errorMessage: 'client disconnected' }), 'client disconnected');
 });
 
 test('POST /turn rejects malformed conversation messages before beginning SSE', async () => {
