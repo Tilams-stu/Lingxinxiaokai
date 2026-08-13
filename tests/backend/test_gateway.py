@@ -93,3 +93,19 @@ def test_gateway_parses_terminal_result_metadata(monkeypatch):
     assert events[0].type == "result"
     assert events[0].state_snapshot == {"mood": "settled"}
     assert events[0].checkpoint_summary == "next-turn context"
+
+
+def test_gateway_preserves_display_safe_source_metadata(monkeypatch):
+    """Dropping an approved-card source would leave the pop-science UI with an empty citation row."""
+    response = FakeResponse(
+        [
+            "event: delta",
+            'data: {"content":"explanation","sources":[{"label":"local card","url":"https://www.nhc.gov.cn/"}]}',
+            "",
+        ]
+    )
+    monkeypatch.setattr("gateway.requests.post", lambda *args, **kwargs: response)
+
+    events = list(NodeGateway("http://localhost:8787").stream_turn(mode="popsci", input="hello", state_snapshot={}, messages=[], summary=""))
+
+    assert events[0].sources == [{"label": "local card", "url": "https://www.nhc.gov.cn/"}]

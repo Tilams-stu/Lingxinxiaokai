@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createLocalSupportTools } from '../dist/tools.js';
+import { createLocalSupportTools, sourceForLocalTool } from '../dist/tools.js';
 
 test('createLocalSupportTools exposes only local psychoeducation and support-resource tools', () => {
   const tools = createLocalSupportTools();
@@ -13,4 +13,9 @@ test('support-resource tool returns local crisis and campus contacts without ext
   assert.match(resources.content[0].text, /12356/);
   assert.match(resources.content[0].text, /110.*120/);
   assert.match(resources.content[0].text, /学校心理中心/);
+});
+
+test('approved psychoeducation tool has display-safe local source metadata', () => {
+  assert.deepEqual(sourceForLocalTool('lookup_psychoeducation'), { label: '本地审核心理科普卡', url: 'https://www.nhc.gov.cn/' });
+  assert.equal(sourceForLocalTool('get_support_resources'), undefined);
 });

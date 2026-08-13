@@ -186,8 +186,14 @@ def test_assessment_exposes_only_safe_latest_state_for_current_user(app, client)
             "u",
             "a",
             state_snapshot={
-                "mood": "low",
-                "sleep": "poor",
+            "mood": "low",
+            "sleep": "poor",
+            "emotions": "焦虑",
+            "concerns": "睡眠",
+            "functioning": "unknown",
+            "protectiveFactors": "unknown",
+            "evidenceSufficiency": "有限",
+            "followUpTarget": "睡眠情况与对日常的影响",
                 "unknown": "must not expose",
                 "support": {"label": "friend", "risk_level": "high", "evidence": {"private": "text"}},
             },
@@ -200,12 +206,32 @@ def test_assessment_exposes_only_safe_latest_state_for_current_user(app, client)
 
     assert response.status_code == 200
     payload = response.get_json()
-    assert payload["assessment"]["state"] == {"mood": "low", "sleep": "poor"}
+    assert payload["assessment"]["state"] == {
+        "emotions": "焦虑",
+        "concerns": "睡眠",
+        "functioning": "unknown",
+        "protectiveFactors": "unknown",
+        "evidenceSufficiency": "有限",
+        "followUpTarget": "睡眠情况与对日常的影响",
+    }
+    assert payload["status"] == "ready"
     assert payload["assessment"]["created_at"]
     assert "medical" in payload["disclaimer"].lower()
     assert "safety_level" not in json.dumps(payload)
-    assert "evidence" not in json.dumps(payload)
+    assert "verbatim" not in json.dumps(payload)
+    assert "private" not in json.dumps(payload)
     assert "other" not in json.dumps(payload)
+
+
+def test_assessment_reports_insufficient_when_no_snapshot_exists(client):
+    """The UI needs a first-class empty state rather than inferring it from a missing object."""
+    register(client)
+
+    response = client.get("/api/assessment?session_id=companion-1")
+
+    assert response.status_code == 200
+    assert response.get_json()["assessment"] is None
+    assert response.get_json()["status"] == "insufficient"
 
 
 def test_popsci_turn_never_creates_assessment_snapshot(app, client):
@@ -345,6 +371,22 @@ def test_chat_stream_proxies_named_events_and_emits_one_done_event(client, gatew
     assert "event: analysis\ndata: {\"content\": \"reasoning\"}" in body
     assert "event: delta\ndata: {\"content\": \"hello\"}" in body
     assert body.count("event: done") == 1
+
+
+def test_chat_stream_keeps_approved_popsci_sources_for_the_browser(client, gateway):
+    """The source row is useful only if Flask retains metadata from the local agent."""
+    gateway.events = [
+        GatewayEvent("delta", content="hello", sources=[{"label": "local card", "url": "https://www.nhc.gov.cn/"}]),
+        GatewayEvent("done"),
+    ]
+    register(client)
+
+    response = client.post(
+        "/api/chat",
+        json={"mode": "popsci", "session_id": "popsci-1", "message": "question", "stream": True},
+    )
+
+    assert '"sources": [{"label": "local card", "url": "https://www.nhc.gov.cn/"}]' in response.get_data(as_text=True)
 
 
 def test_chat_returns_session_busy_when_current_user_session_lock_is_held(app, client):

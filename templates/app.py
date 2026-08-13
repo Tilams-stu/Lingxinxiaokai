@@ -412,7 +412,10 @@ def create_app(test_config: dict | None = None) -> Flask:
                             elif event.type in {"analysis", "delta"} and event.content:
                                 if event.type == "delta":
                                     reply_parts.append(event.content)
-                                yield f"event: {event.type}\ndata: {json.dumps({'content': event.content}, ensure_ascii=False)}\n\n"
+                                payload = {"content": event.content}
+                                if mode == "popsci" and event.sources:
+                                    payload["sources"] = event.sources
+                                yield f"event: {event.type}\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n"
                         reply = "".join(reply_parts).strip()
                         if not failed and reply:
                             save_turn(
@@ -467,8 +470,10 @@ def create_app(test_config: dict | None = None) -> Flask:
         session_id = request.args.get("session_id")
         if not isinstance(session_id, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", session_id):
             return _error("invalid_session", "会话标识无效", 400)
+        current_assessment = latest_assessment(_current_user()["id"], session_id)
         return jsonify({
-            "assessment": latest_assessment(_current_user()["id"], session_id),
+            "assessment": current_assessment,
+            "status": "ready" if current_assessment else "insufficient",
             "disclaimer": "This experimental conversation state is not a medical assessment or diagnosis.",
         })
 

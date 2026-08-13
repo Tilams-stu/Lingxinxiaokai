@@ -48,6 +48,8 @@ templates/venv/
 
 # 任意位置的依赖和本地虚拟环境
 **/node_modules/
+**/.npm-cache/
+**/.verification-venv/
 **/*_venv/
 templates/__pycache__/
 .pytest_tmp/

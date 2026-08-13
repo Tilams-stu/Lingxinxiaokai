@@ -3,18 +3,45 @@ import { Agent, type StreamFn } from '@earendil-works/pi-agent-core';
 import { streamSimple } from '@earendil-works/pi-ai/api/openai-completions';
 import { SessionContextManager, type ContextMessage, type ContextResult } from './context.js';
 import { resolveDeepSeekV4Flash } from './model.js';
-import { classifyRisk, crisisResources } from './safety.js';
-import { createLocalSupportTools } from './tools.js';
+import { classifyRisk, crisisResources, type RiskLevel } from './safety.js';
+import { createLocalSupportTools, sourceForLocalTool } from './tools.js';
 
-export type TurnEvent = { type: 'analysis' | 'delta'; content: string } | { type: 'error'; message: string };
+export interface SourceMetadata { label: string; url?: string; }
+export type TurnEvent = { type: 'analysis' | 'delta'; content: string; sources?: SourceMetadata[] } | { type: 'error'; message: string };
 export interface TurnRequest { mode: 'companion' | 'popsci'; input: string; stateSnapshot: Record<string, unknown>; messages?: ContextMessage[]; summary?: string; }
+export interface SafetyPreflight { level: RiskLevel; available: boolean; }
 export interface ServiceDependencies {
   streamNormalTurn?: (request: TurnRequest) => AsyncIterable<TurnEvent>;
+  preflightSafety?: (input: string) => Promise<SafetyPreflight>;
   apiKey?: string;
   maxRequestBytes?: number;
 }
 
 const systemPrompt = '\u4f60\u662f\u672c\u5730\u5b9e\u9a8c\u6027\u5fc3\u7406\u652f\u6301\u52a9\u624b\u3002\u63d0\u4f9b\u5171\u60c5\u3001\u975e\u8bca\u65ad\u6027\u652f\u6301\u548c\u53ef\u884c\u7684\u4e0b\u4e00\u6b65\uff1b\u4e0d\u505a\u533b\u7597\u8bca\u65ad\u3002\u53ea\u4f7f\u7528\u63d0\u4f9b\u7684\u672c\u5730\u652f\u6301\u5de5\u5177\u3002';
+const safetyPrompt = '\u4f60\u662f\u5b89\u5168\u9884\u68c0\u5668\u3002\u53ea\u5224\u65ad\u5f53\u524d\u8f93\u5165\u4e2d\u662f\u5426\u660e\u786e\u63d0\u5230\u81ea\u6211\u4f24\u5bb3\u3001\u81ea\u6740\u610f\u5ff5\u3001\u5f53\u524d\u610f\u56fe\u3001\u8ba1\u5212\u6216\u624b\u6bb5\u3002\u4e0d\u505a\u8bca\u65ad\u3001\u4e0d\u8f93\u51fa\u8bc1\u636e\u3001\u4e0d\u63a8\u6d4b\u672a\u8bf4\u660e\u7684\u4e8b\u5b9e\u3002\u53ea\u8fd4\u56de JSON: {"level":"none|uncertain|concern|high|imminent"}\u3002\u53ea\u6709\u660e\u786e\u7684\u5f53\u524d\u610f\u56fe\u4e14\u5df2\u8bf4\u660e\u8ba1\u5212\u6216\u624b\u6bb5\u624d\u53ef\u7528 imminent\uff1b\u81ea\u6211\u4f24\u5bb3\u610f\u5ff5\u4f7f\u7528 high\u3002';
+const riskRank = { none: 0, uncertain: 1, concern: 2, high: 3, imminent: 4 } as const;
+
+function extractText(content: Array<{ type: string; text?: string }>): string {
+  return content.filter((item) => item.type === 'text' && typeof item.text === 'string').map((item) => item.text).join('');
+}
+
+async function piSafetyPreflight(input: string, apiKey: string): Promise<SafetyPreflight> {
+  try {
+    const model = resolveDeepSeekV4Flash({ apiKey });
+    const stream = await streamSimple(model, {
+      systemPrompt: safetyPrompt,
+      messages: [{ role: 'user', content: input, timestamp: Date.now() }]
+    }, { reasoning: 'high', maxTokens: 512 });
+    for await (const event of stream) {
+      if (event.type !== 'done') continue;
+      const parsed = JSON.parse(extractText(event.message.content));
+      if (parsed && typeof parsed === 'object' && typeof parsed.level === 'string' && parsed.level in riskRank) {
+        return { level: parsed.level as RiskLevel, available: true };
+      }
+    }
+  } catch { /* deterministic rules remain the minimum safety floor */ }
+  return { level: 'none', available: false };
+}
 
 export function buildModelContext(context: ContextResult): string {
   const transcript = context.recentMessages.map((message) => `${message.role === 'user' ? '\u7528\u6237' : '\u52a9\u624b'}: ${message.content}`).join('\n');
@@ -57,17 +84,33 @@ function validTurn(value: unknown): value is TurnRequest {
 }
 
 function passiveObservation(messages: ContextMessage[], input: string): Record<string, string> {
-  // Conversation text is intentionally not interpreted as clinical, safety, or evidence data.
-  // Until a separately reviewed extractor exists, unstructured input remains unknown.
+  // This is deliberately a transparent, keyword-level recollection—not an LLM score,
+  // diagnosis, risk label, or inference beyond words the user supplied this turn.
   void messages;
-  void input;
+  const emotions = [
+    [/\u7126\u8651|\u7d27\u5f20|\u62c5\u5fc3|\u5bb3\u6015|\u6050\u614c/i, '\u7126\u8651'],
+    [/\u96be\u8fc7|\u4f24\u5fc3|\u4f4e\u843d|\u60c5\u7eea\u4f4e\u843d|\u54ed/i, '\u96be\u8fc7'],
+    [/\u610f\u6012|\u751f\u6c14|\u70e6\u8e81/i, '\u610f\u6012'],
+    [/\u5f00\u5fc3|\u9ad8\u5174|\u6109\u5feb/i, '\u6109\u5feb'],
+  ].filter(([pattern]) => (pattern as RegExp).test(input)).map(([, label]) => label as string);
+  const concerns = [
+    [/\u5b66\u4e1a|\u8003\u8bd5|\u4f5c\u4e1a/i, '\u5b66\u4e1a\u6216\u8003\u8bd5'],
+    [/\u5931\u7720|\u7761\u4e0d\u597d|\u7761\u4e0d\u7740|\u7761\u7720/i, '\u7761\u7720'],
+    [/\u4eba\u9645|\u5b64\u7acb|\u540c\u5b66\u5173\u7cfb|\u670b\u53cb\u5173\u7cfb/i, '\u4eba\u9645\u5173\u7cfb'],
+    [/\u604b\u7231|\u5206\u624b|\u611f\u60c5/i, '\u4eb2\u5bc6\u5173\u7cfb'],
+  ].filter(([pattern]) => (pattern as RegExp).test(input)).map(([, label]) => label as string);
+  const functioning = /\u65e0\u6cd5\u5b66\u4e60|\u5f71\u54cd\u5b66\u4e60|\u65e0\u6cd5\u5de5\u4f5c|\u8d77\u4e0d\u6765\u5e8a|\u65e5\u5e38\u53d7\u5f71\u54cd/i.test(input)
+    ? '\u63d0\u5230\u5b66\u4e60\u6216\u65e5\u5e38\u53d7\u5f71\u54cd' : 'unknown';
+  const protectiveFactors = /\u670b\u53cb|\u5bb6\u4eba|\u8001\u5e08|\u5bfc\u5458|\u5fc3\u7406\u4e2d\u5fc3|\u6c42\u52a9/i.test(input)
+    ? '\u63d0\u5230\u53ef\u8054\u7cfb\u7684\u652f\u6301' : 'unknown';
+  const hasContext = emotions.length > 0 || concerns.length > 0 || functioning !== 'unknown' || protectiveFactors !== 'unknown';
   return {
-    emotions: 'unknown',
-    concerns: 'unknown',
-    functioning: 'unknown',
-    protectiveFactors: 'unknown',
-    evidenceSufficiency: 'unknown',
-    followUpTarget: 'unknown'
+    emotions: emotions.join('\uff1b') || 'unknown',
+    concerns: concerns.join('\uff1b') || 'unknown',
+    functioning,
+    protectiveFactors,
+    evidenceSufficiency: hasContext ? '\u6709\u9650' : 'insufficient',
+    followUpTarget: concerns.includes('\u7761\u7720') ? '\u7761\u7720\u60c5\u51b5\u4e0e\u5bf9\u65e5\u5e38\u7684\u5f71\u54cd' : emotions.length ? '\u8fd9\u79cd\u611f\u53d7\u51fa\u73b0\u7684\u65f6\u95f4\u548c\u5f71\u54cd' : 'unknown'
   };
 }
 
@@ -96,7 +139,14 @@ async function* piTurn(request: TurnRequest, apiKey: string): AsyncIterable<Turn
   for (const message of request.messages ?? []) manager.addMessage(message);
   const context = manager.buildContext(request.stateSnapshot, request.input, request.summary);
   const queue = new AsyncEventQueue();
-  const agent = new Agent({ initialState: { systemPrompt, model: resolveDeepSeekV4Flash({ apiKey }), thinkingLevel: 'low', tools: createLocalSupportTools() }, streamFn: streamSimple as StreamFn, getApiKey: () => apiKey });
+  const sources: SourceMetadata[] = [];
+  let completedTurns = 0;
+  const agent = new Agent({
+    initialState: { systemPrompt, model: resolveDeepSeekV4Flash({ apiKey }), thinkingLevel: 'off', tools: createLocalSupportTools() },
+    streamFn: streamSimple as StreamFn,
+    getApiKey: () => apiKey,
+    shouldStopAfterTurn: () => ++completedTurns >= 2
+  });
   agent.subscribe((event) => {
     if (event.type === 'message_update') {
       const update = event.assistantMessageEvent;
@@ -107,13 +157,21 @@ async function* piTurn(request: TurnRequest, apiKey: string): AsyncIterable<Turn
       const failure = assistantTerminalFailure(event.message);
       if (failure) queue.push({ type: 'error', message: failure });
     }
+    if (event.type === 'tool_execution_end' && !event.isError) {
+      const source = sourceForLocalTool(event.toolName);
+      if (source && !sources.some((item) => item.label === source.label)) sources.push(source);
+    }
   });
   void agent.prompt(buildModelContext(context)).catch((error: unknown) => queue.push({ type: 'error', message: error instanceof Error ? error.message : 'agent unavailable' })).finally(() => queue.close());
-  yield* queue.iterate();
+  for await (const event of queue.iterate()) {
+    if (event.type === 'delta' && request.mode === 'popsci' && sources.length) yield { ...event, sources: [...sources] };
+    else yield event;
+  }
 }
 
 export function createService(dependencies: ServiceDependencies = {}): Server {
   const streamNormalTurn = dependencies.streamNormalTurn ?? ((request: TurnRequest) => piTurn(request, dependencies.apiKey ?? process.env.DEEPSEEK_API_KEY ?? ''));
+  const preflightSafety = dependencies.preflightSafety ?? ((input: string) => piSafetyPreflight(input, dependencies.apiKey ?? process.env.DEEPSEEK_API_KEY ?? ''));
   const maxRequestBytes = dependencies.maxRequestBytes ?? 64 * 1024;
   return createServer(async (request, response) => {
     if (request.method === 'GET' && request.url === '/health') { response.writeHead(200, { 'content-type': 'application/json; charset=utf-8' }); response.end(JSON.stringify({ status: 'ok' })); return; }
@@ -123,13 +181,19 @@ export function createService(dependencies: ServiceDependencies = {}): Server {
     catch (error) { response.writeHead(400, { 'content-type': 'application/json; charset=utf-8' }); response.end(JSON.stringify({ error: error instanceof Error ? error.message : 'invalid request' })); return; }
     response.writeHead(200, { 'content-type': 'text/event-stream; charset=utf-8', 'cache-control': 'no-cache', connection: 'keep-alive' });
     try {
-      const risk = classifyRisk(turn.input);
+      const ruleRisk = classifyRisk(turn.input);
+      const modelRisk: SafetyPreflight = ruleRisk.level === 'high' || ruleRisk.level === 'imminent'
+        ? { level: 'none', available: false }
+        : await preflightSafety(turn.input);
+      const risk = modelRisk.available && riskRank[modelRisk.level] > riskRank[ruleRisk.level]
+        ? { level: modelRisk.level, reasons: ['structured safety preflight raised risk'] }
+        : ruleRisk;
       if (risk.level === 'high' || risk.level === 'imminent') toSse(response, 'delta', { content: crisisResources(risk.level).join('\n') });
       else {
         let failed = false;
         for await (const event of streamNormalTurn(turn)) {
           if (event.type === 'error') { failed = true; toSse(response, 'error', { message: event.message }); }
-          else toSse(response, event.type, { content: event.content });
+          else toSse(response, event.type, { content: event.content, ...(event.sources?.length ? { sources: event.sources } : {}) });
         }
         if (!failed && turn.mode === 'companion') {
           toSse(response, 'result', {

@@ -24,3 +24,6 @@ test('crisisResources returns fixed immediate-support resources for elevated ris
   assert.match(resources, /12356/);
   assert.match(resources, /学校心理中心/);
 });
+test('classifyRisk keeps explicit current intent without a plan at high, not imminent', () => {
+  assert.equal(classifyRisk('\u6211\u73b0\u5728\u60f3\u81ea\u6740\uff0c\u4f46\u8fd8\u6ca1\u6709\u8ba1\u5212').level, 'high');
+});

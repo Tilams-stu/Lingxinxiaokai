@@ -23,6 +23,7 @@ class GatewayEvent:
     message: str | None = None
     state_snapshot: dict[str, Any] | None = None
     checkpoint_summary: str | None = None
+    sources: list[dict[str, str]] | None = None
 
 
 class NodeGateway:
@@ -96,7 +97,15 @@ class NodeGateway:
                     checkpoint_summary=checkpoint if isinstance(checkpoint, str) else None,
                 )
             content = payload.get("content")
-            return GatewayEvent(name, content=content) if isinstance(content, str) and content else None
+            if not isinstance(content, str) or not content:
+                return None
+            sources = payload.get("sources")
+            safe_sources = [
+                {"label": item["label"], **({"url": item["url"]} if isinstance(item.get("url"), str) else {})}
+                for item in sources
+                if isinstance(item, dict) and isinstance(item.get("label"), str)
+            ] if isinstance(sources, list) else None
+            return GatewayEvent(name, content=content, sources=safe_sources)
 
         def flush_event() -> GatewayEvent | None:
             nonlocal event_name, data_lines

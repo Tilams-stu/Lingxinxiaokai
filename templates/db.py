@@ -10,7 +10,14 @@ from typing import Any
 from flask import current_app, g
 
 
-PUBLIC_ASSESSMENT_FIELDS = ("mood", "sleep", "stress", "energy", "coping")
+PUBLIC_ASSESSMENT_FIELDS = (
+    "emotions",
+    "concerns",
+    "functioning",
+    "protectiveFactors",
+    "evidenceSufficiency",
+    "followUpTarget",
+)
 
 
 def utc_now() -> str:

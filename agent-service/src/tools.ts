@@ -26,3 +26,9 @@ export function createLocalSupportTools(): AgentTool[] {
     }
   ];
 }
+
+export function sourceForLocalTool(toolName: string): { label: string; url: string } | undefined {
+  return toolName === 'lookup_psychoeducation'
+    ? { label: '\u672c\u5730\u5ba1\u6838\u5fc3\u7406\u79d1\u666e\u5361', url: 'https://www.nhc.gov.cn/' }
+    : undefined;
+}

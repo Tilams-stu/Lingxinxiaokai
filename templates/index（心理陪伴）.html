@@ -956,7 +956,7 @@
         if (r.status === 401) { location.href = '/login'; return; }
         const data = await r.json().catch(() => ({}));
         if (!r.ok) { renderAssessment('unavailable', { message: pickApiError(data) }); return; }
-        renderAssessment(data.assessment ? 'ready' : 'insufficient', data);
+        renderAssessment(data.status === 'ready' && data.assessment ? 'ready' : 'insufficient', data);
       } catch (_) {
         renderAssessment('unavailable');
       }

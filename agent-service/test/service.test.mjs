@@ -18,7 +18,7 @@ test('GET /health reports the loopback service as healthy', async () => {
   } finally { server.close(); }
 });
 
-test('POST /turn emits one companion result before done after a successful turn', async () => {
+test('POST /turn emits a conservative companion observation before done after a successful turn', async () => {
   const service = createService({ streamNormalTurn: async function* () {
     yield { type: 'analysis', content: 'planning response' };
     yield { type: 'delta', content: '你好' };
@@ -33,11 +33,35 @@ test('POST /turn emits one companion result before done after a successful turn'
     const result = JSON.parse(body.match(/event: result\ndata: (.+)/)[1]);
     assert.deepEqual(Object.keys(result.stateSnapshot).sort(), ['concerns', 'emotions', 'evidenceSufficiency', 'followUpTarget', 'functioning', 'protectiveFactors']);
     assert.deepEqual(result.stateSnapshot, {
-      emotions: 'unknown', concerns: 'unknown', functioning: 'unknown', protectiveFactors: 'unknown', evidenceSufficiency: 'unknown', followUpTarget: 'unknown'
+      emotions: 'unknown', concerns: 'unknown', functioning: 'unknown', protectiveFactors: 'unknown', evidenceSufficiency: 'insufficient', followUpTarget: 'unknown'
     });
     assert.ok(result.checkpointSummary.length <= 80);
     assert.ok(body.indexOf('event: result') < body.indexOf('event: done'));
     assert.equal((body.match(/event: done/g) ?? []).length, 1);
+  } finally { server.close(); }
+});
+
+test('POST /turn records only plainly stated companion themes without a score or diagnosis', async () => {
+  const { server, baseUrl } = await start(createService({ streamNormalTurn: async function* () { yield { type: 'delta', content: 'reply' }; } }));
+  try {
+    const input = '\u6211\u56e0\u4e3a\u8003\u8bd5\u5f88\u7126\u8651\uff0c\u6700\u8fd1\u7761\u4e0d\u597d\uff0c\u4f46\u6211\u613f\u610f\u627e\u670b\u53cb\u804a\u804a\u3002';
+    const response = await fetch(`${baseUrl}/turn`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ mode: 'companion', input, stateSnapshot: {} }) });
+    const body = await response.text();
+    const result = JSON.parse(body.match(/event: result\ndata: (.+)/)[1]);
+    assert.deepEqual(result.stateSnapshot, {
+      emotions: '\u7126\u8651', concerns: '\u5b66\u4e1a\u6216\u8003\u8bd5\uff1b\u7761\u7720', functioning: 'unknown', protectiveFactors: '\u63d0\u5230\u53ef\u8054\u7cfb\u7684\u652f\u6301', evidenceSufficiency: '\u6709\u9650', followUpTarget: '\u7761\u7720\u60c5\u51b5\u4e0e\u5bf9\u65e5\u5e38\u7684\u5f71\u54cd'
+    });
+    assert.doesNotMatch(JSON.stringify(result.stateSnapshot), /\d{1,3}%|\u8bca\u65ad|risk/i);
+  } finally { server.close(); }
+});
+
+test('POST /turn keeps local card sources on the existing delta SSE event', async () => {
+  const source = { label: '\u672c\u5730\u5ba1\u6838\u79d1\u666e\u5361\uff1a\u7126\u8651', url: 'https://www.nhc.gov.cn/' };
+  const { server, baseUrl } = await start(createService({ streamNormalTurn: async function* () { yield { type: 'delta', content: '\u8bf4\u660e', sources: [source] }; } }));
+  try {
+    const response = await fetch(`${baseUrl}/turn`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ mode: 'popsci', input: 'what is anxiety?', stateSnapshot: {} }) });
+    const body = await response.text();
+    assert.match(body, /"sources":\[\{"label":"\u672c\u5730\u5ba1\u6838\u79d1\u666e\u5361\uff1a\u7126\u8651","url":"https:\/\/www\.nhc\.gov\.cn\/"}\]/);
   } finally { server.close(); }
 });
 
@@ -108,6 +132,34 @@ test('POST /turn never emits a result for high or imminent risk', async () => {
       assert.match(body, /event: done/);
     }
     assert.equal(normalTurns, 0);
+  } finally { server.close(); }
+});
+
+test('POST /turn lets an available structured safety preflight raise risk before normal tools run', async () => {
+  let normalTurns = 0;
+  const { server, baseUrl } = await start(createService({
+    preflightSafety: async () => ({ level: 'high', available: true }),
+    streamNormalTurn: async function* () { normalTurns += 1; yield { type: 'delta', content: 'must not run' }; }
+  }));
+  try {
+    const response = await fetch(`${baseUrl}/turn`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ mode: 'companion', input: 'ordinary wording', stateSnapshot: {} }) });
+    const body = await response.text();
+    assert.match(body, /12356/);
+    assert.doesNotMatch(body, /event: result/);
+    assert.equal(normalTurns, 0);
+  } finally { server.close(); }
+});
+
+test('POST /turn falls back to deterministic rules when structured safety preflight is unavailable', async () => {
+  let normalTurns = 0;
+  const { server, baseUrl } = await start(createService({
+    preflightSafety: async () => ({ level: 'none', available: false }),
+    streamNormalTurn: async function* () { normalTurns += 1; yield { type: 'delta', content: 'normal reply' }; }
+  }));
+  try {
+    const response = await fetch(`${baseUrl}/turn`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ mode: 'companion', input: 'ordinary wording', stateSnapshot: {} }) });
+    assert.match(await response.text(), /normal reply/);
+    assert.equal(normalTurns, 1);
   } finally { server.close(); }
 });
 
