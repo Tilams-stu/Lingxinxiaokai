@@ -52,3 +52,4 @@ templates/venv/
 templates/__pycache__/
 .pytest_tmp/
 templates/.pytest_tmp/
+.worktrees/
