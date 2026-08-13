@@ -10,7 +10,7 @@ from typing import Any
 from flask import current_app, g
 
 
-_INTERNAL_STATE_FIELDS = {"safety_level", "risk", "risk_level", "evidence", "evidence_json"}
+PUBLIC_ASSESSMENT_FIELDS = ("mood", "sleep", "stress", "energy", "coping")
 
 
 def utc_now() -> str:
@@ -171,7 +171,11 @@ def latest_assessment(user_id: int, session_id: str):
         state = json.loads(row["state_json"])
     except (json.JSONDecodeError, TypeError):
         state = {}
-    display_state = {key: value for key, value in state.items() if key not in _INTERNAL_STATE_FIELDS} if isinstance(state, dict) else {}
+    display_state = {
+        key: state[key]
+        for key in PUBLIC_ASSESSMENT_FIELDS
+        if isinstance(state, dict) and isinstance(state.get(key), str)
+    }
     return {"state": display_state, "created_at": row["created_at"]}
 
 

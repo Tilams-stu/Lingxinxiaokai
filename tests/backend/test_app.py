@@ -183,7 +183,12 @@ def test_assessment_exposes_only_safe_latest_state_for_current_user(app, client)
             "companion-1",
             "u",
             "a",
-            state_snapshot={"mood": "low", "sleep": "poor"},
+            state_snapshot={
+                "mood": "low",
+                "sleep": "poor",
+                "unknown": "must not expose",
+                "support": {"label": "friend", "risk_level": "high", "evidence": {"private": "text"}},
+            },
             safety_level="high",
             evidence={"verbatim": "private"},
         )
@@ -214,6 +219,95 @@ def test_popsci_turn_never_creates_assessment_snapshot(app, client):
     with app.app_context():
         count = get_db().execute("SELECT COUNT(*) FROM assessment_snapshots").fetchone()[0]
     assert count == 0
+
+
+def test_companion_turn_persists_gateway_result_snapshot_and_bounded_checkpoint(app, client, gateway):
+    """Dropping Node result metadata would lose the state needed by the next authenticated turn."""
+    gateway.events = [
+        GatewayEvent("delta", content="reply"),
+        GatewayEvent(
+            "result",
+            content=json.dumps({"stateSnapshot": {"mood": "settled", "stress": "moderate"}, "checkpointSummary": "summary from Node"}),
+        ),
+        GatewayEvent("done"),
+    ]
+    register(client)
+
+    response = client.post(
+        "/api/chat",
+        json={"mode": "companion", "session_id": "companion-1", "message": "hello", "stream": False},
+    )
+
+    assert response.status_code == 200
+    with app.app_context():
+        conn = get_db()
+        snapshot = conn.execute("SELECT state_json FROM assessment_snapshots").fetchone()
+        checkpoint = conn.execute("SELECT summary FROM context_checkpoints").fetchone()
+    assert json.loads(snapshot["state_json"]) == {"mood": "settled", "stress": "moderate"}
+    assert checkpoint["summary"] == "summary from Node"
+
+
+def test_companion_turn_bounds_gateway_checkpoint_before_persisting(app, client, gateway):
+    """Persisting an unbounded agent checkpoint could grow a session record without limit."""
+    app.config["MAX_CHECKPOINT_CHARS"] = 8
+    gateway.events = [
+        GatewayEvent("delta", content="reply"),
+        GatewayEvent("result", content=json.dumps({"stateSnapshot": {}, "checkpointSummary": "0123456789"})),
+        GatewayEvent("done"),
+    ]
+    register(client)
+
+    response = client.post(
+        "/api/chat",
+        json={"mode": "companion", "session_id": "companion-1", "message": "hello", "stream": False},
+    )
+
+    assert response.status_code == 200
+    with app.app_context():
+        checkpoint = get_db().execute("SELECT summary FROM context_checkpoints").fetchone()
+    assert checkpoint["summary"] == "23456789"
+
+
+def test_streaming_companion_turn_persists_gateway_result_metadata(app, client, gateway):
+    """Saving state only for JSON replies would make streaming companion sessions lose their checkpoint."""
+    gateway.events = [
+        GatewayEvent("delta", content="reply"),
+        GatewayEvent("result", content=json.dumps({"stateSnapshot": {"energy": "low"}, "checkpointSummary": "stream summary"})),
+        GatewayEvent("done"),
+    ]
+    register(client)
+
+    response = client.post(
+        "/api/chat",
+        json={"mode": "companion", "session_id": "companion-1", "message": "hello", "stream": True},
+    )
+
+    assert "event: done" in response.get_data(as_text=True)
+    with app.app_context():
+        snapshot = get_db().execute("SELECT state_json FROM assessment_snapshots").fetchone()
+        checkpoint = get_db().execute("SELECT summary FROM context_checkpoints").fetchone()
+    assert json.loads(snapshot["state_json"]) == {"energy": "low"}
+    assert checkpoint["summary"] == "stream summary"
+
+
+def test_popsci_turn_discards_gateway_result_state_and_checkpoint(app, client, gateway):
+    """Persisting Node result metadata for popsci would cross the companion-only state boundary."""
+    gateway.events = [
+        GatewayEvent("delta", content="reply"),
+        GatewayEvent("result", content=json.dumps({"stateSnapshot": {"mood": "settled"}, "checkpointSummary": "must not persist"})),
+        GatewayEvent("done"),
+    ]
+    register(client)
+
+    response = client.post(
+        "/api/chat",
+        json={"mode": "popsci", "session_id": "popsci-1", "message": "question", "stream": False},
+    )
+
+    assert response.status_code == 200
+    with app.app_context():
+        assert get_db().execute("SELECT COUNT(*) FROM assessment_snapshots").fetchone()[0] == 0
+        assert get_db().execute("SELECT COUNT(*) FROM context_checkpoints").fetchone()[0] == 0
 
 
 def test_high_risk_fixed_reply_bypasses_gateway_and_persists(client, gateway):

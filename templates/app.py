@@ -132,6 +132,7 @@ def create_app(test_config: dict | None = None) -> Flask:
         SESSION_COOKIE_SAMESITE=os.getenv("SESSION_COOKIE_SAMESITE", "Lax"),
         SESSION_COOKIE_SECURE=os.getenv("SESSION_COOKIE_SECURE", "false").lower() in {"1", "true", "yes", "on"},
         AGENT_BASE_URL=os.getenv("AGENT_BASE_URL", "http://127.0.0.1:8787"),
+        MAX_CHECKPOINT_CHARS=int(os.getenv("MAX_CHECKPOINT_CHARS", "80000")),
         RATELIMIT_ENABLED=True,
     )
     if test_config:
@@ -374,13 +375,36 @@ def create_app(test_config: dict | None = None) -> Flask:
             messages, state_snapshot, summary = load_session_context(user_id, session_id)
             gateway = app.extensions["turn_gateway"]
             events = gateway.stream_turn(input=user_text, state_snapshot=state_snapshot, messages=messages, summary=summary)
+
+            def turn_result(event):
+                if event.type != "result":
+                    return None, None
+                snapshot = event.state_snapshot
+                checkpoint = event.checkpoint_summary
+                if snapshot is None and checkpoint is None and event.content:
+                    try:
+                        payload = json.loads(event.content)
+                    except json.JSONDecodeError:
+                        payload = {}
+                    snapshot = payload.get("stateSnapshot") if isinstance(payload.get("stateSnapshot"), dict) else None
+                    checkpoint = payload.get("checkpointSummary") if isinstance(payload.get("checkpointSummary"), str) else None
+                if isinstance(checkpoint, str):
+                    limit = max(0, app.config["MAX_CHECKPOINT_CHARS"])
+                    checkpoint = checkpoint[-limit:] if limit else ""
+                return snapshot if isinstance(snapshot, dict) else None, checkpoint if isinstance(checkpoint, str) else None
+
             if wants_stream:
                 def proxy_stream():
                     reply_parts: list[str] = []
                     failed = False
+                    result_snapshot = None
+                    result_checkpoint = None
                     try:
                         for event in events:
                             if event.type == "done":
+                                continue
+                            if event.type == "result":
+                                result_snapshot, result_checkpoint = turn_result(event)
                                 continue
                             if event.type == "error":
                                 failed = True
@@ -391,7 +415,15 @@ def create_app(test_config: dict | None = None) -> Flask:
                                 yield f"event: {event.type}\ndata: {json.dumps({'content': event.content}, ensure_ascii=False)}\n\n"
                         reply = "".join(reply_parts).strip()
                         if not failed and reply:
-                            save_turn(user_id, session_id, user_text, reply, mode=mode)
+                            save_turn(
+                                user_id,
+                                session_id,
+                                user_text,
+                                reply,
+                                state_snapshot=result_snapshot if mode == "companion" else None,
+                                checkpoint_summary=result_checkpoint if mode == "companion" else None,
+                                mode=mode,
+                            )
                         elif not failed:
                             yield f"event: error\ndata: {json.dumps({'message': 'local agent returned no reply'}, ensure_ascii=False)}\n\n"
                     except GatewayError as exc:
@@ -401,15 +433,27 @@ def create_app(test_config: dict | None = None) -> Flask:
                         yield "event: done\ndata: {}\n\n"
                 return Response(stream_with_context(proxy_stream()), mimetype="text/event-stream")
             reply_parts = []
+            result_snapshot = None
+            result_checkpoint = None
             for event in events:
                 if event.type == "error":
                     raise GatewayError(event.message or "local agent unavailable")
+                if event.type == "result":
+                    result_snapshot, result_checkpoint = turn_result(event)
                 if event.type == "delta" and event.content:
                     reply_parts.append(event.content)
             reply = "".join(reply_parts).strip()
             if not reply:
                 raise GatewayError("local agent returned no reply")
-            save_turn(user_id, session_id, user_text, reply, mode=mode)
+            save_turn(
+                user_id,
+                session_id,
+                user_text,
+                reply,
+                state_snapshot=result_snapshot if mode == "companion" else None,
+                checkpoint_summary=result_checkpoint if mode == "companion" else None,
+                mode=mode,
+            )
             return jsonify({"reply": reply})
         except GatewayError as exc:
             return _error("upstream_unavailable", str(exc), 502)
