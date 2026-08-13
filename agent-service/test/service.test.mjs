@@ -55,6 +55,26 @@ test('POST /turn records only plainly stated companion themes without a score or
   } finally { server.close(); }
 });
 
+test('POST /turn carries forward plainly stated themes from recent user context', async () => {
+  const { server, baseUrl } = await start(createService({ streamNormalTurn: async function* () { yield { type: 'delta', content: 'reply' }; } }));
+  try {
+    const messages = [
+      { role: 'user', content: '我因为期末考试很焦虑，最近睡不好，但我愿意找朋友聊聊。' },
+      { role: 'assistant', content: '我听到了。' }
+    ];
+    const response = await fetch(`${baseUrl}/turn`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ mode: 'companion', input: '我想继续说说。', messages, stateSnapshot: {} })
+    });
+    const body = await response.text();
+    const result = JSON.parse(body.match(/event: result\ndata: (.+)/)[1]);
+    assert.deepEqual(result.stateSnapshot, {
+      emotions: '焦虑', concerns: '学业或考试；睡眠', functioning: 'unknown', protectiveFactors: '提到可联系的支持', evidenceSufficiency: '有限', followUpTarget: '睡眠情况与对日常的影响'
+    });
+  } finally { server.close(); }
+});
+
 test('POST /turn keeps local card sources on the existing delta SSE event', async () => {
   const source = { label: '\u672c\u5730\u5ba1\u6838\u79d1\u666e\u5361\uff1a\u7126\u8651', url: 'https://www.nhc.gov.cn/' };
   const { server, baseUrl } = await start(createService({ streamNormalTurn: async function* () { yield { type: 'delta', content: '\u8bf4\u660e', sources: [source] }; } }));

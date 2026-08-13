@@ -85,23 +85,28 @@ function validTurn(value: unknown): value is TurnRequest {
 
 function passiveObservation(messages: ContextMessage[], input: string): Record<string, string> {
   // This is deliberately a transparent, keyword-level recollection—not an LLM score,
-  // diagnosis, risk label, or inference beyond words the user supplied this turn.
-  void messages;
+  // diagnosis, risk label, or inference beyond words the user supplied in this session.
+  // Assistant text is excluded so the recap cannot turn its own suggestions into user facts.
+  const recentUserText = messages
+    .filter((message) => message.role === 'user')
+    .slice(-8)
+    .map((message) => message.content);
+  const observationText = [...recentUserText, input].join('\n');
   const emotions = [
     [/\u7126\u8651|\u7d27\u5f20|\u62c5\u5fc3|\u5bb3\u6015|\u6050\u614c/i, '\u7126\u8651'],
     [/\u96be\u8fc7|\u4f24\u5fc3|\u4f4e\u843d|\u60c5\u7eea\u4f4e\u843d|\u54ed/i, '\u96be\u8fc7'],
     [/\u610f\u6012|\u751f\u6c14|\u70e6\u8e81/i, '\u610f\u6012'],
     [/\u5f00\u5fc3|\u9ad8\u5174|\u6109\u5feb/i, '\u6109\u5feb'],
-  ].filter(([pattern]) => (pattern as RegExp).test(input)).map(([, label]) => label as string);
+  ].filter(([pattern]) => (pattern as RegExp).test(observationText)).map(([, label]) => label as string);
   const concerns = [
     [/\u5b66\u4e1a|\u8003\u8bd5|\u4f5c\u4e1a/i, '\u5b66\u4e1a\u6216\u8003\u8bd5'],
     [/\u5931\u7720|\u7761\u4e0d\u597d|\u7761\u4e0d\u7740|\u7761\u7720/i, '\u7761\u7720'],
     [/\u4eba\u9645|\u5b64\u7acb|\u540c\u5b66\u5173\u7cfb|\u670b\u53cb\u5173\u7cfb/i, '\u4eba\u9645\u5173\u7cfb'],
     [/\u604b\u7231|\u5206\u624b|\u611f\u60c5/i, '\u4eb2\u5bc6\u5173\u7cfb'],
-  ].filter(([pattern]) => (pattern as RegExp).test(input)).map(([, label]) => label as string);
-  const functioning = /\u65e0\u6cd5\u5b66\u4e60|\u5f71\u54cd\u5b66\u4e60|\u65e0\u6cd5\u5de5\u4f5c|\u8d77\u4e0d\u6765\u5e8a|\u65e5\u5e38\u53d7\u5f71\u54cd/i.test(input)
+  ].filter(([pattern]) => (pattern as RegExp).test(observationText)).map(([, label]) => label as string);
+  const functioning = /\u65e0\u6cd5\u5b66\u4e60|\u5f71\u54cd\u5b66\u4e60|\u65e0\u6cd5\u5de5\u4f5c|\u8d77\u4e0d\u6765\u5e8a|\u65e5\u5e38\u53d7\u5f71\u54cd/i.test(observationText)
     ? '\u63d0\u5230\u5b66\u4e60\u6216\u65e5\u5e38\u53d7\u5f71\u54cd' : 'unknown';
-  const protectiveFactors = /\u670b\u53cb|\u5bb6\u4eba|\u8001\u5e08|\u5bfc\u5458|\u5fc3\u7406\u4e2d\u5fc3|\u6c42\u52a9/i.test(input)
+  const protectiveFactors = /\u670b\u53cb|\u5bb6\u4eba|\u8001\u5e08|\u5bfc\u5458|\u5fc3\u7406\u4e2d\u5fc3|\u6c42\u52a9/i.test(observationText)
     ? '\u63d0\u5230\u53ef\u8054\u7cfb\u7684\u652f\u6301' : 'unknown';
   const hasContext = emotions.length > 0 || concerns.length > 0 || functioning !== 'unknown' || protectiveFactors !== 'unknown';
   return {

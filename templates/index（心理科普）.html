@@ -16,6 +16,7 @@
   <title>聆心小开 · 解惑助手</title>
   <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" rel="stylesheet">
   <script src="/assets/chat-api.js"></script>
+  <script src="/assets/markdown-renderer.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
   <style>
     :root {
@@ -654,7 +655,7 @@
     /* ===== Helpers ===== */
     function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
     function escAttr(s) { return String(s || '').replace(/"/g, '&quot;').replace(/</g, ''); }
-    function md(s) { return esc(s).replace(/\n/g, '<br>'); }
+    function md(s) { return window.LxMarkdown.render(s); }
     function getCurrentTime() {
       return new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
     }
@@ -898,8 +899,8 @@
       }
       if (!isLoading) {
         const messageBody = d.querySelector('.msg-body');
-        messageBody.textContent = content;
-        messageBody.style.whiteSpace = 'pre-wrap';
+        if (role === 'assistant') messageBody.innerHTML = md(content);
+        else { messageBody.textContent = content; messageBody.style.whiteSpace = 'pre-wrap'; }
       }
       chatInner.appendChild(d);
       setTimeout(() => scrollChatBottom(true), 30);
@@ -990,8 +991,8 @@
       let sourceMetadata = null;
       const renderResponse = () => {
         const display = streamError ? `${full}${full ? '\n\n' : ''}${streamError}` : full;
-        responseBody.textContent = display;
-        responseBody.style.whiteSpace = 'pre-wrap';
+        responseBody.innerHTML = md(display);
+        responseBody.style.whiteSpace = '';
         if (!responseTime) {
           responseTime = document.createElement('div');
           responseTime.className = 'msg-time';
