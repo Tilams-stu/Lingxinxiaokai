@@ -6,16 +6,16 @@
 - `agent-service/src/model.ts`: DeepSeek V4 Flash Pi model composition (`deepseek-v4-flash`, 1M context, 16,384 output reserve, DeepSeek thinking mapping).
 - `agent-service/src/safety.ts`: deterministic `none`/`uncertain`/`concern`/`high`/`imminent` classification and fixed crisis resources.
 - `agent-service/src/tools.ts`: Pi `lookup_psychoeducation(topic)` and `get_support_resources(region)` tools restricted to approved local knowledge cards and support resources.
-- `agent-service/src/context.ts`: token-based context management using a model-window threshold, `reserveTokens=16384`, `keepRecentTokens=20000`, summary compaction, state snapshot, and current input.
-- `agent-service/src/service.ts` and `agent-service/src/server.ts`: loopback Node HTTP service exposing `GET /health` and SSE `POST /turn`; elevated-risk turns bypass the agent tools.
-- `agent-service/test/*.test.mjs`: tests for model resolution, safety risk levels/resources, local tool boundary, token compaction, health, SSE events, crisis bypass, and agent errors.
+- `agent-service/src/context.ts`: token-based context management using a model-window threshold, `reserveTokens=16384`, `keepRecentTokens=20000`, persisted-summary input/output bounds, state snapshot, and current input.
+- `agent-service/src/service.ts` and `agent-service/src/server.ts`: loopback Node HTTP service exposing `GET /health` and SSE `POST /turn`; it validates bounded request bodies/messages before streaming, carries summary/recent user+assistant/state/current input into model context, streams Pi events incrementally, and bypasses agent tools for elevated-risk turns.
+- `agent-service/test/*.test.mjs`: tests for model resolution, safety risk levels/resources, local tool boundary, bounded compaction, model-context assembly, request validation/limits, health, SSE events, crisis bypass, and agent errors.
 
 ## Test-first evidence
 
 1. RED: `node --test test\\*.test.mjs` before implementation failed because `dist/context.js`, `dist/model.js`, `dist/safety.js`, and `dist/tools.js` did not yet exist.
 2. GREEN: `npm.cmd test`
 
-Result: 13 passed, 0 failed. The command runs TypeScript compilation followed by all Node tests.
+Result: 17 passed, 0 failed. The command runs TypeScript compilation followed by all Node tests.
 
 ## Concerns
 

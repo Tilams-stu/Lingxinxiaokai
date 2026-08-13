@@ -29,9 +29,11 @@ export class SessionContextManager {
 
   addMessage(message: ContextMessage): void { this.messages.push(message); }
 
-  buildContext(stateSnapshot: Record<string, unknown>, currentInput: string): ContextResult {
-    const inputTokens = this.countTokens(currentInput) + this.countTokens(JSON.stringify(stateSnapshot)) + this.countTokens(this.summary);
-    const availableTokens = Math.max(0, Math.min(this.keepRecentTokens, this.contextWindow - this.reserveTokens - inputTokens));
+  buildContext(stateSnapshot: Record<string, unknown>, currentInput: string, persistedSummary = ''): ContextResult {
+    const totalHistoryBudget = Math.max(0, this.contextWindow - this.reserveTokens - this.countTokens(currentInput) - this.countTokens(JSON.stringify(stateSnapshot)));
+    const summaryBudget = Math.max(0, Math.min(this.keepRecentTokens, Math.floor(totalHistoryBudget / 2)));
+    this.summary = this.truncate(persistedSummary, summaryBudget);
+    const availableTokens = Math.max(0, Math.min(this.keepRecentTokens, this.contextWindow - this.reserveTokens - this.countTokens(currentInput) - this.countTokens(JSON.stringify(stateSnapshot)) - this.countTokens(this.summary)));
     let recentTokens = 0;
     let splitAt = this.messages.length;
     for (let index = this.messages.length - 1; index >= 0; index -= 1) {
@@ -43,9 +45,14 @@ export class SessionContextManager {
     const compacted = this.messages.slice(0, splitAt);
     if (compacted.length) {
       const addition = compacted.map((message) => `${message.role}: ${message.content}`).join('\n');
-      this.summary = [this.summary, addition].filter(Boolean).join('\n');
+      this.summary = this.truncate([this.summary, addition].filter(Boolean).join('\n'), summaryBudget);
       this.messages = this.messages.slice(splitAt);
     }
     return { summary: this.summary, recentMessages: [...this.messages], stateSnapshot, currentInput };
+  }
+
+  private truncate(text: string, budget: number): string {
+    if (this.countTokens(text) <= budget) return text;
+    return text.slice(-budget);
   }
 }

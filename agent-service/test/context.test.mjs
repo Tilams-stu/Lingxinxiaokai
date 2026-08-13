@@ -10,8 +10,18 @@ test('SessionContextManager compacts at the context-window token threshold while
 
   const context = manager.buildContext({ mood: 'anxious' }, 'current input');
 
-  assert.match(context.summary, /old distress/);
+  assert.ok(context.summary.length <= 20);
   assert.deepEqual(context.recentMessages, [{ role: 'user', content: 'recent message' }]);
   assert.deepEqual(context.stateSnapshot, { mood: 'anxious' });
   assert.equal(context.currentInput, 'current input');
+});
+
+test('SessionContextManager bounds a persisted summary before combining it with compacted history', () => {
+  const manager = new SessionContextManager({ contextWindow: 80, reserveTokens: 16, keepRecentTokens: 20, countTokens: (text) => text.length });
+  manager.addMessage({ role: 'user', content: 'old message' });
+
+  const context = manager.buildContext({ mood: 'anxious' }, 'now', 'persisted summary that is deliberately far too long');
+
+  assert.ok(context.summary.length <= 20);
+  assert.match(context.summary, /far too long/);
 });
