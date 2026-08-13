@@ -7,7 +7,7 @@ import { classifyRisk, crisisResources } from './safety.js';
 import { createLocalSupportTools } from './tools.js';
 
 export type TurnEvent = { type: 'analysis' | 'delta'; content: string } | { type: 'error'; message: string };
-export interface TurnRequest { input: string; stateSnapshot: Record<string, unknown>; messages?: ContextMessage[]; summary?: string; }
+export interface TurnRequest { mode: 'companion' | 'popsci'; input: string; stateSnapshot: Record<string, unknown>; messages?: ContextMessage[]; summary?: string; }
 export interface ServiceDependencies {
   streamNormalTurn?: (request: TurnRequest) => AsyncIterable<TurnEvent>;
   apiKey?: string;
@@ -50,10 +50,31 @@ async function readJson(request: IncomingMessage, maxBytes: number): Promise<unk
 function validTurn(value: unknown): value is TurnRequest {
   if (typeof value !== 'object' || value === null) return false;
   const turn = value as Partial<TurnRequest>;
-  return typeof turn.input === 'string' && typeof turn.stateSnapshot === 'object' && turn.stateSnapshot !== null &&
+  return (turn.mode === 'companion' || turn.mode === 'popsci') && typeof turn.input === 'string' && typeof turn.stateSnapshot === 'object' && turn.stateSnapshot !== null &&
     (turn.summary === undefined || typeof turn.summary === 'string') &&
     (turn.messages === undefined || (Array.isArray(turn.messages) && turn.messages.every((message) =>
       typeof message === 'object' && message !== null && (message.role === 'user' || message.role === 'assistant') && typeof message.content === 'string')));
+}
+
+function passiveObservation(messages: ContextMessage[], input: string): Record<string, string> {
+  // Conversation text is intentionally not interpreted as clinical, safety, or evidence data.
+  // Until a separately reviewed extractor exists, unstructured input remains unknown.
+  void messages;
+  void input;
+  return {
+    emotions: 'unknown',
+    concerns: 'unknown',
+    functioning: 'unknown',
+    protectiveFactors: 'unknown',
+    evidenceSufficiency: 'unknown',
+    followUpTarget: 'unknown'
+  };
+}
+
+function checkpointSummary(turn: TurnRequest): string {
+  const manager = new SessionContextManager({ contextWindow: 1_000_000 });
+  for (const message of turn.messages ?? []) manager.addMessage(message);
+  return manager.buildContext(turn.stateSnapshot, turn.input, turn.summary).summary;
 }
 
 class AsyncEventQueue {
@@ -98,13 +119,25 @@ export function createService(dependencies: ServiceDependencies = {}): Server {
     if (request.method === 'GET' && request.url === '/health') { response.writeHead(200, { 'content-type': 'application/json; charset=utf-8' }); response.end(JSON.stringify({ status: 'ok' })); return; }
     if (request.method !== 'POST' || request.url !== '/turn') { response.writeHead(404).end(); return; }
     let turn: TurnRequest;
-    try { const parsed = await readJson(request, maxRequestBytes); if (!validTurn(parsed)) throw new Error('input, stateSnapshot, and valid messages are required'); turn = parsed; }
+    try { const parsed = await readJson(request, maxRequestBytes); if (!validTurn(parsed)) throw new Error('mode, input, stateSnapshot, and valid messages are required'); turn = parsed; }
     catch (error) { response.writeHead(400, { 'content-type': 'application/json; charset=utf-8' }); response.end(JSON.stringify({ error: error instanceof Error ? error.message : 'invalid request' })); return; }
     response.writeHead(200, { 'content-type': 'text/event-stream; charset=utf-8', 'cache-control': 'no-cache', connection: 'keep-alive' });
     try {
       const risk = classifyRisk(turn.input);
       if (risk.level === 'high' || risk.level === 'imminent') toSse(response, 'delta', { content: crisisResources(risk.level).join('\n') });
-      else for await (const event of streamNormalTurn(turn)) event.type === 'error' ? toSse(response, 'error', { message: event.message }) : toSse(response, event.type, { content: event.content });
+      else {
+        let failed = false;
+        for await (const event of streamNormalTurn(turn)) {
+          if (event.type === 'error') { failed = true; toSse(response, 'error', { message: event.message }); }
+          else toSse(response, event.type, { content: event.content });
+        }
+        if (!failed && turn.mode === 'companion') {
+          toSse(response, 'result', {
+            stateSnapshot: passiveObservation(turn.messages ?? [], turn.input),
+            checkpointSummary: checkpointSummary(turn)
+          });
+        }
+      }
     } catch (error) { toSse(response, 'error', { message: error instanceof Error ? error.message : 'agent unavailable' }); }
     finally { toSse(response, 'done', {}); response.end(); }
   });

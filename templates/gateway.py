@@ -49,6 +49,7 @@ class NodeGateway:
     def stream_turn(
         self,
         *,
+        mode: str,
         input: str,
         state_snapshot: dict[str, Any],
         messages: list[dict[str, str]],
@@ -57,7 +58,7 @@ class NodeGateway:
         try:
             response = requests.post(
                 self._url,
-                json={"input": input, "stateSnapshot": state_snapshot, "messages": messages, "summary": summary},
+                json={"mode": mode, "input": input, "stateSnapshot": state_snapshot, "messages": messages, "summary": summary},
                 headers={"Accept": "text/event-stream"},
                 stream=True,
                 timeout=self._timeout,

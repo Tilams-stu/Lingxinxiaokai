@@ -39,9 +39,29 @@ function validTurn(value) {
     if (typeof value !== 'object' || value === null)
         return false;
     const turn = value;
-    return typeof turn.input === 'string' && typeof turn.stateSnapshot === 'object' && turn.stateSnapshot !== null &&
+    return (turn.mode === 'companion' || turn.mode === 'popsci') && typeof turn.input === 'string' && typeof turn.stateSnapshot === 'object' && turn.stateSnapshot !== null &&
         (turn.summary === undefined || typeof turn.summary === 'string') &&
         (turn.messages === undefined || (Array.isArray(turn.messages) && turn.messages.every((message) => typeof message === 'object' && message !== null && (message.role === 'user' || message.role === 'assistant') && typeof message.content === 'string')));
+}
+function passiveObservation(messages, input) {
+    // Conversation text is intentionally not interpreted as clinical, safety, or evidence data.
+    // Until a separately reviewed extractor exists, unstructured input remains unknown.
+    void messages;
+    void input;
+    return {
+        emotions: 'unknown',
+        concerns: 'unknown',
+        functioning: 'unknown',
+        protectiveFactors: 'unknown',
+        evidenceSufficiency: 'unknown',
+        followUpTarget: 'unknown'
+    };
+}
+function checkpointSummary(turn) {
+    const manager = new SessionContextManager({ contextWindow: 1_000_000 });
+    for (const message of turn.messages ?? [])
+        manager.addMessage(message);
+    return manager.buildContext(turn.stateSnapshot, turn.input, turn.summary).summary;
 }
 class AsyncEventQueue {
     values = [];
@@ -103,7 +123,7 @@ export function createService(dependencies = {}) {
         try {
             const parsed = await readJson(request, maxRequestBytes);
             if (!validTurn(parsed))
-                throw new Error('input, stateSnapshot, and valid messages are required');
+                throw new Error('mode, input, stateSnapshot, and valid messages are required');
             turn = parsed;
         }
         catch (error) {
@@ -116,9 +136,23 @@ export function createService(dependencies = {}) {
             const risk = classifyRisk(turn.input);
             if (risk.level === 'high' || risk.level === 'imminent')
                 toSse(response, 'delta', { content: crisisResources(risk.level).join('\n') });
-            else
-                for await (const event of streamNormalTurn(turn))
-                    event.type === 'error' ? toSse(response, 'error', { message: event.message }) : toSse(response, event.type, { content: event.content });
+            else {
+                let failed = false;
+                for await (const event of streamNormalTurn(turn)) {
+                    if (event.type === 'error') {
+                        failed = true;
+                        toSse(response, 'error', { message: event.message });
+                    }
+                    else
+                        toSse(response, event.type, { content: event.content });
+                }
+                if (!failed && turn.mode === 'companion') {
+                    toSse(response, 'result', {
+                        stateSnapshot: passiveObservation(turn.messages ?? [], turn.input),
+                        checkpointSummary: checkpointSummary(turn)
+                    });
+                }
+            }
         }
         catch (error) {
             toSse(response, 'error', { message: error instanceof Error ? error.message : 'agent unavailable' });

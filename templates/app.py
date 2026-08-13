@@ -374,7 +374,7 @@ def create_app(test_config: dict | None = None) -> Flask:
         try:
             messages, state_snapshot, summary = load_session_context(user_id, session_id)
             gateway = app.extensions["turn_gateway"]
-            events = gateway.stream_turn(input=user_text, state_snapshot=state_snapshot, messages=messages, summary=summary)
+            events = gateway.stream_turn(mode=mode, input=user_text, state_snapshot=state_snapshot, messages=messages, summary=summary)
 
             def turn_result(event):
                 if event.type != "result":

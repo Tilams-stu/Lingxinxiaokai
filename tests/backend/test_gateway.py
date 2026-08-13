@@ -39,11 +39,18 @@ class FakeResponse:
 def test_gateway_processes_valid_final_sse_event_at_eof(monkeypatch):
     """Only flushing on a blank line would drop the last model token at connection close."""
     response = FakeResponse(["event: delta", 'data: {"content":"last token"}'])
-    monkeypatch.setattr("gateway.requests.post", lambda *args, **kwargs: response)
+    posted = {}
 
-    events = list(NodeGateway("http://127.0.0.1:8787").stream_turn(input="hello", state_snapshot={}, messages=[], summary=""))
+    def post(*args, **kwargs):
+        posted.update(kwargs)
+        return response
+
+    monkeypatch.setattr("gateway.requests.post", post)
+
+    events = list(NodeGateway("http://127.0.0.1:8787").stream_turn(mode="companion", input="hello", state_snapshot={}, messages=[], summary=""))
 
     assert [(event.type, event.content) for event in events] == [("delta", "last token")]
+    assert posted["json"]["mode"] == "companion"
     assert response.closed is True
 
 
@@ -64,7 +71,7 @@ def test_gateway_ignores_unknown_and_malformed_sse_events(monkeypatch):
     )
     monkeypatch.setattr("gateway.requests.post", lambda *args, **kwargs: response)
 
-    events = list(NodeGateway("http://localhost:8787").stream_turn(input="hello", state_snapshot={}, messages=[], summary=""))
+    events = list(NodeGateway("http://localhost:8787").stream_turn(mode="popsci", input="hello", state_snapshot={}, messages=[], summary=""))
 
     assert [(event.type, event.content) for event in events] == [("delta", "kept")]
 
@@ -80,7 +87,7 @@ def test_gateway_parses_terminal_result_metadata(monkeypatch):
     )
     monkeypatch.setattr("gateway.requests.post", lambda *args, **kwargs: response)
 
-    events = list(NodeGateway("http://[::1]:8787").stream_turn(input="hello", state_snapshot={}, messages=[], summary=""))
+    events = list(NodeGateway("http://[::1]:8787").stream_turn(mode="companion", input="hello", state_snapshot={}, messages=[], summary=""))
 
     assert len(events) == 1
     assert events[0].type == "result"

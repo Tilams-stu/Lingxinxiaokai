@@ -18,9 +18,10 @@ class FakeGateway:
         self.events = events or [GatewayEvent("delta", content="gateway reply"), GatewayEvent("done")]
         self.requests = []
 
-    def stream_turn(self, *, input, state_snapshot, messages, summary):
+    def stream_turn(self, *, mode, input, state_snapshot, messages, summary):
         self.requests.append(
             {
+                "mode": mode,
                 "input": input,
                 "state_snapshot": state_snapshot,
                 "messages": messages,
@@ -156,6 +157,7 @@ def test_chat_loads_complete_current_session_history_server_side(app, client, ga
     assert response.get_json() == {"reply": "gateway reply"}
     assert gateway.requests == [
         {
+            "mode": "companion",
             "input": "current message",
             "state_snapshot": {},
             "messages": [
