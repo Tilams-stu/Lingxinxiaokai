@@ -1,53 +1,33 @@
-# API 与数据安全说明
+# API 与数据安全
 
-## 身份和权限
+## 认证、权限与数据
 
-- 认证只使用带签名的 Flask Session Cookie，不在浏览器 localStorage 保存 token，也不接受 Bearer Token 登录。
-- 公开注册固定创建普通用户；管理员只通过服务器本地 Flask CLI 授予或撤销。
-- 所有隐私接口在后端执行权限检查。隐藏按钮或 Vue 路由守卫只改善体验，不是安全边界。
-- 普通用户只能读取和删除自己的聊天；全量用户、他人消息和导出仅管理员可用。
-- 管理员导出包含学号和聊天正文，应按敏感个人信息管理。
+- 认证仅使用签名 Flask Session Cookie；不在浏览器保存 token，也不支持 Bearer Token 登录。
+- 普通用户只能读取或删除自己的会话；用户列表、其他用户消息和导出仅管理员可用。
+- 聊天正文保存在 SQLite；管理员导出不包含状态快照或 Pi 上下文摘要。
+- 删除会话会同步删除其消息、状态快照与上下文检查点。
 
-## 密钥和配置
+## 密钥与网络边界
 
-- `.env`、数据库、备份和导出文件不得提交 Git、发送到群聊或放入静态目录。
-- `SECRET_KEY` 使用至少 32 字节密码学随机值；轮换后所有旧 Session 会失效。
-- DeepSeek 密钥如曾出现在源码、文档、截图或 Git 历史中，必须在平台侧撤销并重新生成。
-- 非测试启动发现空值或已知占位值会拒绝运行。
-- 正式 HTTPS 设置 `SESSION_COOKIE_SECURE=true`，代理头信任默认保持关闭。
+- `templates/.env`、SQLite、备份和导出文件不得提交 Git 或放入 Web 目录。
+- `SECRET_KEY` 必须使用强随机值。`DEEPSEEK_API_KEY` 只由本机 `agent-service` 进程读取，绝不返回给浏览器。
+- Flask 仅接受 loopback `AGENT_BASE_URL`，防止把私有会话历史发送给远程主机。
+- 浏览器只调用 Flask `/api/*`；Node Agent 不对浏览器公开。
 
-## AI 接口边界
+## AI 边界
 
-- 浏览器只能调用受控的 `/api/chat` 和 `/api/emotions/analyze`。
-- `system` 消息会被拒绝；提示词、模型、温度和最大令牌数由 `templates/ai_service.py` 控制。
-- 不恢复通用 DeepSeek/Hiagent 代理、TTS、卡片生成或允许跳过持久化的接口。
-- 输入角色、数量和长度均有限制。所有 AI 输出和用户名在浏览器按纯文本显示，禁止未经清洗的 `innerHTML`。
-- 服务端检测明确自伤/自杀表达，命中后跳过上游并返回固定干预信息。规则和联系方式更新必须同时修改测试和文档。
+- 浏览器不能提交 `history` 或 `messages`，避免伪造服务端会话上下文。
+- Node 仅开放两个本地只读工具；没有 Bash、文件、网络、数据库或任意 HTTP 工具。
+- 风险规则是最低防线；结构化预检只能提高规则等级。高/紧急风险不调用普通 Agent 或工具。
+- `/api/assessment` 仅返回展示安全的六项状态，不返回内部证据、风险等级、模型思考或摘要。
 
-## 隐私与日志
-
-- 聊天正文只保存在 SQLite，不增加 JSONL 双写、请求正文日志或浏览器地理位置采集。
-- 情绪分析不另行保存；但若用户从聊天历史选取文本，它本身可能已经属于聊天记录。
-- 错误日志只记录排障所需元数据，不记录密码、密钥、Cookie、聊天正文或上游完整响应。
-- 删除用户聊天是实际数据库删除，执行前产品层面应向用户说明不可恢复性；备份中的历史数据仍受备份保留政策约束。
-
-## 限流
-
-| 接口 | 限制 |
-| --- | --- |
-| 注册 | 每 IP 每小时 5 次 |
-| 登录 | 每 IP 每分钟 10 次 |
-| 聊天 | 每用户每分钟 30 次 |
-| 情绪分析 | 每用户每分钟 10 次 |
-| 健康检查 | 不限流 |
-
-当前限流存储是进程内状态，因此生产基线保持一个 Gunicorn worker。若未来扩展为多 worker/多实例，必须先接入可信共享限流存储并补充测试。
-
-## 发布安全检查
+## 发布检查
 
 ```powershell
-rg -n --hidden -g '!/.git/**' -g '!web/node_modules/**' -g '!templates/.venv/**' '(sk-[A-Za-z0-9_-]{16,}|Bearer\s+[A-Za-z0-9._-]{16,}|password\s*=|api[_-]?key\s*=)' .
 git diff --check
+npm.cmd test --prefix agent-service
+$env:PYTHONPATH = "$PWD\templates"
+templates\.venv\Scripts\python.exe -m pytest tests\backend -q
 ```
 
-扫描结果需要人工判断；`.env.example` 的变量名和测试中对已删除接口的断言可能是合理匹配。绝不能通过把真实密钥改成另一个真实密钥来“修复”扫描结果。
+正式 HTTPS 环境设置 `SESSION_COOKIE_SECURE=true`；仅当反向代理可信并会覆写转发头时才设置 `TRUST_PROXY_HEADERS=true`。
