@@ -10,13 +10,17 @@ test('classifyRisk raises high risk for self-harm ideation without imminent inte
   assert.equal(classifyRisk('我最近反复想自杀，但没有准备行动').level, 'high');
 });
 
-test('classifyRisk keeps ordinary distress at low risk', () => {
-  assert.equal(classifyRisk('今天很焦虑，睡不好，想找人说说').level, 'low');
+test('classifyRisk marks ordinary distress as concern', () => {
+  assert.equal(classifyRisk('今天很焦虑，睡不好，想找人说说').level, 'concern');
+});
+
+test('classifyRisk maps explicit current self-harm intention with a plan or means to imminent', () => {
+  assert.equal(classifyRisk('我现在想自杀，药已经放在面前了').level, 'imminent');
 });
 
 test('crisisResources returns fixed immediate-support resources for elevated risk', () => {
-  assert.deepEqual(crisisResources('imminent'), [
-    '如有立即危险，请立刻拨打当地急救电话 120 或报警电话 110，或前往最近急诊。',
-    '请尽量不要独处，联系一位可信任的人陪伴你，并移开可能伤害自己的物品。'
-  ]);
+  const resources = crisisResources('imminent').join('\n');
+  assert.match(resources, /120.*110/);
+  assert.match(resources, /12356/);
+  assert.match(resources, /学校心理中心/);
 });

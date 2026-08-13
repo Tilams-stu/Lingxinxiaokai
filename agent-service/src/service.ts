@@ -86,7 +86,7 @@ export function createService(dependencies: ServiceDependencies = {}): Server {
     response.writeHead(200, { 'content-type': 'text/event-stream; charset=utf-8', 'cache-control': 'no-cache', connection: 'keep-alive' });
     try {
       const risk = classifyRisk(turn.input);
-      if (risk.level !== 'low') {
+      if (risk.level === 'high' || risk.level === 'imminent') {
         toSse(response, 'delta', { content: crisisResources(risk.level).join('\n') });
       } else {
         for await (const event of streamNormalTurn(turn)) toSse(response, event.type, { content: event.content });
