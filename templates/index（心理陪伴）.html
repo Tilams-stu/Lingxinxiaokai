@@ -17,7 +17,6 @@
   <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" rel="stylesheet">
   <script src="/assets/chat-api.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
   <style>
     :root {
       --bg-start: #EBF2ED;
@@ -391,7 +390,6 @@
     }
     .modal-close:hover { background: #fff; color: var(--accent); }
 
-    #radarChart { width: 100%; height: 280px; }
     .modal-tip { font-size: 13px; color: var(--text-sub); margin-top: 12px; line-height: 1.55; }
 
     .diary-textarea {
@@ -483,7 +481,7 @@
       <div class="nav-title">陪伴空间</div>
       <nav class="nav-menu">
         <button type="button" class="nav-item active" data-view="chat" id="navChat"><i class="fa-solid fa-comments"></i> 倾诉树洞</button>
-        <button type="button" class="nav-item" data-action="emotion"><i class="fa-solid fa-chart-line"></i> 情绪分析</button>
+        <button type="button" class="nav-item" data-action="assessment"><i class="fa-solid fa-clipboard-list"></i> 状态回顾</button>
         <button type="button" class="nav-item" data-action="diary"><i class="fa-solid fa-book"></i> 心理日记</button>
         <button type="button" class="nav-item" data-action="calendar"><i class="fa-solid fa-calendar"></i> 情绪日历</button>
         <a class="nav-item" href="/" id="navHome"><i class="fa-solid fa-house"></i> 返回首页</a>
@@ -531,14 +529,13 @@
     </main>
   </div>
 
-  <div class="modal" id="modalEmotion" role="dialog" aria-modal="true">
-    <div class="modal-box">
+  <div class="modal" id="modalAssessment" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="assessmentTitle">
+    <div class="modal-box assessment-modal-box" tabindex="-1">
       <div class="modal-head">
-        <h2>情绪分析</h2>
-        <button type="button" class="modal-close" data-close="modalEmotion" aria-label="关闭">&times;</button>
+        <h2 id="assessmentTitle">状态回顾</h2>
+        <button type="button" class="modal-close" data-close="modalAssessment" aria-label="关闭状态回顾">&times;</button>
       </div>
-      <div id="radarChart"></div>
-      <p class="modal-tip" id="emotionTip"></p>
+      <div id="assessmentContent" class="assessment-content" aria-live="polite"></div>
     </div>
   </div>
 
@@ -650,11 +647,12 @@
     const sendBtn = document.getElementById('send');
     const charCount = document.getElementById('charCount');
     const scrollBtm = document.getElementById('scrollBtm');
-    const MAX_HIST = 20;
     const LS_COMPANION_SID = 'lx_companion_session_id';
     let history = [];
     let currentSessionId = null;
-    let radarChart = null;
+    let isSending = false;
+    let activeModal = null;
+    let lastModalTrigger = null;
 
     function newCompanionId() {
       return 'companion-' + (typeof crypto !== 'undefined' && crypto.randomUUID
@@ -776,6 +774,39 @@
       return '';
     }
 
+    function parseNamedSseFrame(frame) {
+      let event = '';
+      const data = [];
+      frame.split(/\r?\n/).forEach(line => {
+        if (line.startsWith('event:')) event = line.slice(6).trim();
+        if (line.startsWith('data:')) data.push(line.slice(5).trim());
+      });
+      if (!event) return null;
+      const raw = data.join('\n');
+      if (raw === '[DONE]') return { event: 'done', data: {} };
+      try { return { event, data: raw ? JSON.parse(raw) : {} }; } catch (_) { return null; }
+    }
+
+    async function readNamedSse(response, onEvent) {
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      const flush = frame => {
+        const parsed = parseNamedSseFrame(frame);
+        if (parsed) onEvent(parsed.event, parsed.data);
+      };
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const frames = buffer.split(/\r?\n\r?\n/);
+        buffer = frames.pop() || '';
+        frames.forEach(flush);
+      }
+      buffer += decoder.decode();
+      if (buffer.trim()) flush(buffer);
+    }
+
     async function streamChat(text) {
       if (!(await checkAuth())) return;
       bumpWind();
@@ -808,7 +839,7 @@
           body: JSON.stringify({
             mode: 'companion',
             session_id: currentSessionId,
-            messages: history.slice(-MAX_HIST),
+            message: text,
             stream: true
           })
         });
@@ -826,32 +857,23 @@
           history.push({ role: 'assistant', content: msg });
           return;
         }
-        const reader = r.body.getReader();
-        const dec = new TextDecoder();
-        let buf = '';
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          buf += dec.decode(value, { stream: true });
-          const lines = buf.split('\n');
-          buf = lines.pop() || '';
-          for (const line of lines) {
-            if (line.startsWith('data: ') && line !== 'data: [DONE]') {
-              try {
-                const j = JSON.parse(line.slice(6));
-                if (j?.type === 'error') throw new Error(j.message || '服务暂时不可用');
-                const piece = j?.type === 'delta' ? j.content : '';
-                if (piece) {
-                  full += piece;
-                  body.textContent = full;
-                  body.style.whiteSpace = 'pre-wrap';
-                  timeEl.textContent = getCurrentTime();
-                }
-              } catch (_) {}
-            }
+        let streamError = '';
+        await readNamedSse(r, (event, data) => {
+          if (event === 'analysis') {
+            row.dataset.analysis = typeof data.content === 'string' ? data.content : '';
+            return;
+          }
+          if (event === 'delta' && typeof data.content === 'string') full += data.content;
+          if (event === 'error') streamError = pickApiError(data) || '服务暂时不可用，请稍后再试。';
+          if (event === 'done') row.dataset.done = 'true';
+          if (full || streamError) {
+            body.textContent = streamError ? `${full}${full ? '\n\n' : ''}${streamError}` : full;
+            body.style.whiteSpace = 'pre-wrap';
+            timeEl.textContent = getCurrentTime();
           }
           scrollChatBottom(false);
-        }
+        });
+        if (streamError) full = `${full}${full ? '\n\n' : ''}${streamError}`;
         body.textContent = full;
         body.style.whiteSpace = 'pre-wrap';
         timeEl.textContent = getCurrentTime();
@@ -871,51 +893,72 @@
       scrollChatBottom(true);
     }
 
-    async function analyzeEmotion() {
+    function assessmentValue(value) {
+      if (Array.isArray(value)) return value.filter(Boolean).join('、');
+      if (value && typeof value === 'object') return value.label || value.text || value.summary || '';
+      return value == null || value === '' ? '暂无记录' : String(value);
+    }
+
+    function assessmentField(assessment, names) {
+      const state = assessment && typeof assessment.state === 'object' ? assessment.state : {};
+      for (const name of names) {
+        if (assessment && assessment[name] != null) return assessment[name];
+        if (state && state[name] != null) return state[name];
+      }
+      return null;
+    }
+
+    function renderAssessment(status, payload = {}) {
+      const content = document.getElementById('assessmentContent');
+      content.replaceChildren();
+      const message = document.createElement('p');
+      message.className = 'assessment-state';
+      if (status === 'loading') message.textContent = '正在整理本次对话中已记录的状态…';
+      if (status === 'insufficient') message.textContent = '当前对话中的信息还不足以形成状态回顾。你可以继续聊聊近况，之后再回来看看。';
+      if (status === 'unavailable') message.textContent = payload.message || '状态回顾暂时不可用，请稍后再试。';
+      content.appendChild(message);
+      if (status !== 'ready') return;
+
+      const assessment = payload.assessment || {};
+      const fields = [
+        ['情绪', ['emotions', 'emotion', 'mood']],
+        ['关切', ['concerns', 'concern']],
+        ['日常功能', ['functioning', 'daily_functioning']],
+        ['保护因素', ['protective_factors', 'protectiveFactors', 'support']],
+        ['证据充分度', ['evidence_sufficiency', 'evidenceSufficiency']],
+        ['后续关注目标', ['follow_up_target', 'followUpTarget']]
+      ];
+      const list = document.createElement('dl');
+      list.className = 'assessment-list';
+      fields.forEach(([label, names]) => {
+        const row = document.createElement('div');
+        row.className = 'assessment-row';
+        const title = document.createElement('dt');
+        title.textContent = label;
+        const value = document.createElement('dd');
+        value.textContent = assessmentValue(assessmentField(assessment, names));
+        row.append(title, value);
+        list.appendChild(row);
+      });
+      content.appendChild(list);
+      const disclaimer = document.createElement('p');
+      disclaimer.className = 'assessment-state';
+      disclaimer.textContent = payload.disclaimer || '本回顾仅用于自我觉察，不构成医疗诊断或专业建议。';
+      content.appendChild(disclaimer);
+    }
+
+    async function openAssessment() {
       if (!(await checkAuth())) return;
-      openModal('modalEmotion');
-      document.getElementById('emotionTip').textContent = '分析中…';
-      const text = history.filter(m => m.role === 'user').map(m => m.content).join(' ') || '暂无对话';
+      openModal('modalAssessment');
+      renderAssessment('loading');
       try {
-        const r = await fetch('/api/emotions/analyze', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          credentials: 'include',
-          cache: 'no-store',
-          body: JSON.stringify({ mode: 'companion', text: text.slice(0, 500) })
-        });
-        const data = await r.json().catch(() => ({}));
+        const r = await fetch('/api/assessment?session_id=' + encodeURIComponent(currentSessionId), { credentials: 'include', cache: 'no-store' });
         if (r.status === 401) { location.href = '/login'; return; }
-        let emo = { happy: 0.3, sad: 0.2, angry: 0.1, calm: 0.4, surprised: 0.2, fear: 0.1 };
-        if (data.scores && typeof data.scores === 'object') emo = { ...emo, ...data.scores };
-        const names = { happy: '开心', sad: '悲伤', angry: '愤怒', calm: '平静', surprised: '惊讶', fear: '恐惧' };
-        const vals = Object.entries(emo).map(([k, v]) => ({
-          name: names[k] || k,
-          value: Math.min(1, Math.max(0, Number(v) || 0))
-        }));
-        const el = document.getElementById('radarChart');
-        if (radarChart) radarChart.dispose();
-        radarChart = echarts.init(el);
-        radarChart.setOption({
-          radar: {
-            indicator: vals.map(v => ({ name: v.name, max: 1 })),
-            shape: 'polygon',
-            splitArea: { areaStyle: { color: ['rgba(125,164,141,0.08)', 'rgba(125,164,141,0.03)'] } },
-            axisLine: { lineStyle: { color: 'rgba(125,164,141,0.35)' } },
-            splitLine: { lineStyle: { color: 'rgba(125,164,141,0.22)' } }
-          },
-          series: [{
-            type: 'radar',
-            data: [{
-              value: vals.map(v => v.value),
-              areaStyle: { color: 'rgba(125,164,141,0.28)' },
-              lineStyle: { color: '#7da48d', width: 2 }
-            }]
-          }]
-        });
-        document.getElementById('emotionTip').textContent = '以上为基于本次对话的情绪分析，仅供参考，愿你心情平和～';
-      } catch (e) {
-        document.getElementById('emotionTip').textContent = '分析失败，请稍后重试。';
+        const data = await r.json().catch(() => ({}));
+        if (!r.ok) { renderAssessment('unavailable', { message: pickApiError(data) }); return; }
+        renderAssessment(data.assessment ? 'ready' : 'insufficient', data);
+      } catch (_) {
+        renderAssessment('unavailable');
       }
     }
 
@@ -971,8 +1014,34 @@
       }).join('');
     }
 
-    function openModal(id) { document.getElementById(id).classList.add('show'); }
-    function closeModal(id) { document.getElementById(id).classList.remove('show'); }
+    function openModal(id) {
+      const modal = document.getElementById(id);
+      lastModalTrigger = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+      activeModal = modal;
+      modal.classList.add('show');
+      modal.setAttribute('aria-hidden', 'false');
+      setTimeout(() => modal.querySelector('[data-close], button, textarea, [tabindex]:not([tabindex="-1"])')?.focus(), 0);
+    }
+    function closeModal(id) {
+      const modal = document.getElementById(id);
+      modal.classList.remove('show');
+      modal.setAttribute('aria-hidden', 'true');
+      if (activeModal === modal) activeModal = null;
+      const trigger = lastModalTrigger;
+      lastModalTrigger = null;
+      if (trigger && document.contains(trigger)) setTimeout(() => trigger.focus(), 0);
+    }
+
+    document.addEventListener('keydown', e => {
+      if (!activeModal) return;
+      if (e.key === 'Escape') { e.preventDefault(); closeModal(activeModal.id); return; }
+      if (e.key !== 'Tab') return;
+      const focusable = [...activeModal.querySelectorAll('button:not([disabled]), textarea:not([disabled]), [href], [tabindex]:not([tabindex="-1"])')];
+      if (!focusable.length) return;
+      const first = focusable[0], last = focusable[focusable.length - 1];
+      if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+      if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+    });
 
     function setNavChatActive() {
       document.querySelectorAll('.nav-item[data-action]').forEach(n => n.classList.remove('active'));
@@ -1000,7 +1069,7 @@
       const len = input.value.length;
       charCount.textContent = len;
       charCount.style.color = len > 500 ? '#C75C7A' : '';
-      sendBtn.disabled = !input.value.trim();
+      sendBtn.disabled = isSending || !input.value.trim();
     }
 
     input.addEventListener('input', autoResize);
@@ -1036,7 +1105,7 @@
         document.querySelectorAll('.nav-item[data-action]').forEach(n => n.classList.remove('active'));
         btn.classList.add('active');
         const act = btn.dataset.action;
-        if (act === 'emotion') analyzeEmotion();
+        if (act === 'assessment') openAssessment();
         if (act === 'diary') { initDiary(); openModal('modalDiary'); }
         if (act === 'calendar') { initCalendar(); openModal('modalCalendar'); }
         closeMobileSidebar();
@@ -1048,6 +1117,9 @@
         closeModal(btn.dataset.close);
         setNavChatActive();
       });
+    });
+    document.querySelectorAll('.modal').forEach(modal => {
+      modal.addEventListener('click', e => { if (e.target === modal) closeModal(modal.id); });
     });
 
     document.getElementById('saveDiary').onclick = saveDiary;
@@ -1076,12 +1148,13 @@
     bindTap(document.getElementById('userProfile'), () => { location.href = '/home'; });
 
     sendBtn.onclick = () => {
+      if (isSending) return;
       const t = input.value.trim();
       if (!t) return;
       input.value = '';
+      isSending = true;
       autoResize();
-      sendBtn.disabled = true;
-      streamChat(t).finally(() => { sendBtn.disabled = !input.value.trim(); input.focus(); });
+      streamChat(t).finally(() => { isSending = false; autoResize(); input.focus(); });
     };
 
     (async () => {

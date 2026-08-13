@@ -17,7 +17,6 @@
   <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" rel="stylesheet">
   <script src="/assets/chat-api.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
   <style>
     :root {
       --bg-start: #EBF2ED;
@@ -370,7 +369,6 @@
     }
     .modal-close:hover { background: #fff; color: var(--accent); }
     .modal-tip { font-size: 13px; color: var(--text-sub); margin: 12px 0 0; line-height: 1.55; }
-    #spectrumChart { width: 100%; height: 280px; }
     .diary-textarea {
       width: 100%; min-height: 140px; padding: 12px; border-radius: 14px;
       border: 1px solid var(--glass-border); font-family: inherit; font-size: 14px;
@@ -468,7 +466,6 @@
       <div class="nav-title">特色功能</div>
       <nav class="nav-menu">
         <button type="button" class="nav-item active" data-view="chat" id="navChat"><i class="fa-solid fa-spa"></i> 解惑树洞</button>
-        <button type="button" class="nav-item" data-action="spectrum"><i class="fa-solid fa-chart-pie"></i> 情绪光谱</button>
         <button type="button" class="nav-item" data-action="meditate"><i class="fa-solid fa-wind"></i> 氧气冥想</button>
         <button type="button" class="nav-item" data-action="diary"><i class="fa-solid fa-book-open"></i> 心灵日记</button>
         <a class="nav-item" href="/" id="navHome"><i class="fa-solid fa-house"></i> 返回首页</a>
@@ -524,16 +521,6 @@
     </main>
   </div>
 
-  <div class="modal" id="modalSpectrum" role="dialog" aria-modal="true">
-    <div class="modal-box">
-      <div class="modal-head">
-        <h2>情绪光谱</h2>
-        <button type="button" class="modal-close" data-close="modalSpectrum">&times;</button>
-      </div>
-      <div id="spectrumChart"></div>
-      <p class="modal-tip" id="spectrumTip">基于当前对话内容的情绪分布估算，仅供参考。</p>
-    </div>
-  </div>
 
   <div class="modal" id="modalDiary" role="dialog" aria-modal="true">
     <div class="modal-box">
@@ -643,7 +630,6 @@
     })();
 
     /* ===== Constants & Refs ===== */
-    const MAX_HIST = 16;
     const STORAGE_DIARY = 'lx_popsci_diary';
 
     const chat = document.getElementById('chat');
@@ -659,7 +645,9 @@
     let history = [];
     let sessions = [];
     let currentSessionId = null;
-    let spectrumChart = null;
+    let isSending = false;
+    let activeModal = null;
+    let lastModalTrigger = null;
     let medTimer = null;
     let medRunning = false;
 
@@ -860,7 +848,38 @@
       scrollChatBottom(false);
     }
 
-    function addMsg(content, role, isLoading, skipPersist) {
+    function appendSources(row, metadata) {
+      const sourceList = Array.isArray(metadata) ? metadata : metadata ? [metadata] : [];
+      const sources = sourceList.map(source => {
+        if (typeof source === 'string') return { label: source, url: '' };
+        if (!source || typeof source !== 'object') return null;
+        const label = source.label || source.title || source.name || source.source;
+        const url = source.url || source.href || source.link;
+        if (typeof label !== 'string' || !label.trim()) return null;
+        if (typeof url !== 'string' || !url.trim()) return { label: label.trim(), url: '' };
+        try {
+          const parsed = new URL(url, location.origin);
+          return { label: label.trim(), url: /^https?:$/.test(parsed.protocol) ? parsed.href : '' };
+        } catch (_) { return { label: label.trim(), url: '' }; }
+      }).filter(Boolean).slice(0, 5);
+      if (!sources.length) return;
+      const wrap = document.createElement('div');
+      wrap.className = 'assistant-sources';
+      const title = document.createElement('span');
+      title.className = 'assistant-sources-title';
+      title.textContent = '参考来源';
+      wrap.appendChild(title);
+      sources.forEach(source => {
+        const item = source.url ? document.createElement('a') : document.createElement('span');
+        item.className = 'assistant-source';
+        item.textContent = source.label;
+        if (source.url) { item.href = source.url; item.target = '_blank'; item.rel = 'noopener noreferrer'; }
+        wrap.appendChild(item);
+      });
+      row.querySelector('.msg-content-wrap')?.appendChild(wrap);
+    }
+
+    function addMsg(content, role, isLoading, skipPersist, sources) {
       const d = document.createElement('div');
       d.className = 'msg ' + role;
       if (isLoading) {
@@ -885,6 +904,7 @@
       chatInner.appendChild(d);
       setTimeout(() => scrollChatBottom(true), 30);
       if (!skipPersist && !isLoading) persistCurrentSession();
+      if (role === 'assistant' && !isLoading) appendSources(d, sources);
       return d;
     }
 
@@ -910,23 +930,76 @@
       return '';
     }
 
+    function parseNamedSseFrame(frame) {
+      let event = '';
+      const data = [];
+      frame.split(/\r?\n/).forEach(line => {
+        if (line.startsWith('event:')) event = line.slice(6).trim();
+        if (line.startsWith('data:')) data.push(line.slice(5).trim());
+      });
+      if (!event) return null;
+      const raw = data.join('\n');
+      if (raw === '[DONE]') return { event: 'done', data: {} };
+      try { return { event, data: raw ? JSON.parse(raw) : {} }; } catch (_) { return null; }
+    }
+
+    async function readNamedSse(response, onEvent) {
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      const flush = frame => {
+        const parsed = parseNamedSseFrame(frame);
+        if (parsed) onEvent(parsed.event, parsed.data);
+      };
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const frames = buffer.split(/\r?\n\r?\n/);
+        buffer = frames.pop() || '';
+        frames.forEach(flush);
+      }
+      buffer += decoder.decode();
+      if (buffer.trim()) flush(buffer);
+    }
+
     async function sendMsg() {
-      if (!(await checkAuth())) return;
+      if (isSending) return;
       const text = input.value.trim();
       if (!text) return;
+      isSending = true;
+      autoResize();
+      if (!(await checkAuth())) { isSending = false; autoResize(); return; }
       // remove welcome if present
       const wc = chatInner.querySelector('.welcome-card');
       if (wc) wc.remove();
 
       input.value = '';
       autoResize();
-      sendBtn.disabled = true;
       bumpWind();
 
       history.push({ role: 'user', content: text });
       addMsg(text, 'user');
 
       const loadingNode = addMsg('', 'assistant', true);
+      const responseBody = loadingNode.querySelector('.msg-body');
+      const responseWrap = loadingNode.querySelector('.msg-content-wrap');
+      let responseTime = null;
+      let full = '';
+      let streamError = '';
+      let sourceMetadata = null;
+      const renderResponse = () => {
+        const display = streamError ? `${full}${full ? '\n\n' : ''}${streamError}` : full;
+        responseBody.textContent = display;
+        responseBody.style.whiteSpace = 'pre-wrap';
+        if (!responseTime) {
+          responseTime = document.createElement('div');
+          responseTime.className = 'msg-time';
+          responseWrap.appendChild(responseTime);
+        }
+        responseTime.textContent = getCurrentTime();
+        scrollChatBottom(false);
+      };
 
       try {
         const r = await fetch('/api/chat', {
@@ -937,37 +1010,51 @@
           body: JSON.stringify({
             mode: 'popsci',
             session_id: currentSessionId,
-            messages: history.slice(-MAX_HIST),
-            stream: false
+            message: text,
+            stream: true
           })
         });
-        const data = await r.json().catch(() => ({}));
-        loadingNode.remove();
 
         if (r.status === 401) {
           const msg401 = '登录已过期，请重新登录后再试。';
+          full = msg401;
+          renderResponse();
           history.push({ role: 'assistant', content: msg401 });
-          addMsg(msg401, 'assistant');
           setTimeout(() => { location.href = '/login'; }, 800);
           return;
         }
         if (!r.ok) {
+          const data = await r.json().catch(() => ({}));
           const err = pickApiError(data) || `服务暂时不可用（${r.status}）`;
+          full = err;
+          renderResponse();
           history.push({ role: 'assistant', content: err });
-          addMsg(err, 'assistant');
           return;
         }
-        let reply = data?.reply || '';
-        if (!reply) reply = pickApiError(data) || '未收到模型回复，请稍后再试。';
-        history.push({ role: 'assistant', content: reply });
-        addMsg(reply, 'assistant');
+        await readNamedSse(r, (event, data) => {
+          if (event === 'analysis') {
+            loadingNode.dataset.analysis = typeof data.content === 'string' ? data.content : '';
+            return;
+          }
+          if (event === 'delta' && typeof data.content === 'string') full += data.content;
+          if (event === 'error') streamError = pickApiError(data) || '服务暂时不可用，请稍后再试。';
+          if (data && typeof data === 'object') sourceMetadata = data.sources || data.source_metadata || data.source || sourceMetadata;
+          if (event === 'done') loadingNode.dataset.done = 'true';
+          if (full || streamError) renderResponse();
+        });
+        if (streamError) full = `${full}${full ? '\n\n' : ''}${streamError}`;
+        if (!full.trim()) full = '未收到模型回复，请稍后再试。';
+        renderResponse();
+        appendSources(loadingNode, sourceMetadata);
+        history.push({ role: 'assistant', content: full });
       } catch (e) {
-        loadingNode.remove();
         const err = '网络好像打了个盹，稍后再试一下吧～';
+        full = err;
+        renderResponse();
         history.push({ role: 'assistant', content: err });
-        addMsg(err, 'assistant');
       } finally {
-        sendBtn.disabled = !input.value.trim();
+        isSending = false;
+        autoResize();
         input.focus();
         persistCurrentSession();
         loadSessionsFromServer();
@@ -975,51 +1062,34 @@
     }
 
     /* ===== Modals & extra features ===== */
-    function openModal(id) { document.getElementById(id).classList.add('show'); }
-    function closeModal(id) { document.getElementById(id).classList.remove('show'); }
-
-    async function openSpectrum() {
-      if (!(await checkAuth())) return;
-      openModal('modalSpectrum');
-      document.getElementById('spectrumTip').textContent = '分析中…';
-      const text = history.filter(m => m.role === 'user').map(m => m.content).join(' ') || '暂无对话内容';
-      try {
-        const r = await fetch('/api/emotions/analyze', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          credentials: 'include',
-          cache: 'no-store',
-          body: JSON.stringify({ mode: 'popsci', text: text.slice(0, 500) })
-        });
-        const data = await r.json().catch(() => ({}));
-        if (r.status === 401) { location.href = '/login'; return; }
-        let emo = { happy: 0.3, sad: 0.2, angry: 0.1, calm: 0.4, surprised: 0.15, fear: 0.1 };
-        if (data.scores && typeof data.scores === 'object') emo = { ...emo, ...data.scores };
-        const names = { happy: '愉悦', sad: '低落', angry: '烦躁', calm: '平静', surprised: '惊讶', fear: '不安' };
-        const vals = Object.entries(emo).map(([k, v]) => ({
-          name: names[k] || k,
-          value: Math.round(Math.min(1, Math.max(0, Number(v) || 0)) * 100)
-        }));
-        const el = document.getElementById('spectrumChart');
-        if (spectrumChart) spectrumChart.dispose();
-        spectrumChart = echarts.init(el);
-        spectrumChart.setOption({
-          tooltip: { trigger: 'item' },
-          series: [{
-            type: 'pie',
-            radius: ['42%', '68%'],
-            avoidLabelOverlap: true,
-            itemStyle: { borderRadius: 8, borderColor: '#fff', borderWidth: 2 },
-            label: { color: '#3A4A41' },
-            data: vals.map(v => ({ name: v.name, value: v.value }))
-          }],
-          color: ['#7DA48D', '#9BB8A8', '#B8CFC4', '#658A74', '#A8C4B4', '#DCE8E1']
-        });
-        document.getElementById('spectrumTip').textContent = '以上为基于当前对话的情绪光谱，仅供自我觉察参考。';
-      } catch (e) {
-        document.getElementById('spectrumTip').textContent = '分析失败，请稍后重试。';
-      }
+    function openModal(id) {
+      const modal = document.getElementById(id);
+      lastModalTrigger = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+      activeModal = modal;
+      modal.classList.add('show');
+      modal.setAttribute('aria-hidden', 'false');
+      setTimeout(() => modal.querySelector('[data-close], button, textarea, [tabindex]:not([tabindex="-1"])')?.focus(), 0);
     }
+    function closeModal(id) {
+      const modal = document.getElementById(id);
+      modal.classList.remove('show');
+      modal.setAttribute('aria-hidden', 'true');
+      if (activeModal === modal) activeModal = null;
+      const trigger = lastModalTrigger;
+      lastModalTrigger = null;
+      if (trigger && document.contains(trigger)) setTimeout(() => trigger.focus(), 0);
+    }
+
+    document.addEventListener('keydown', e => {
+      if (!activeModal) return;
+      if (e.key === 'Escape') { e.preventDefault(); closeModal(activeModal.id); return; }
+      if (e.key !== 'Tab') return;
+      const focusable = [...activeModal.querySelectorAll('button:not([disabled]), textarea:not([disabled]), [href], [tabindex]:not([tabindex="-1"])')];
+      if (!focusable.length) return;
+      const first = focusable[0], last = focusable[focusable.length - 1];
+      if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+      if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+    });
 
     function initDiary() {
       document.getElementById('diaryText').value = localStorage.getItem(STORAGE_DIARY) || '';
@@ -1078,7 +1148,7 @@
       const len = input.value.length;
       charCount.textContent = len;
       charCount.style.color = len > 1800 ? '#C75C7A' : '';
-      sendBtn.disabled = !input.value.trim();
+      sendBtn.disabled = isSending || !input.value.trim();
     }
 
     input.addEventListener('input', autoResize);
@@ -1108,7 +1178,6 @@
         document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
         btn.classList.add('active');
         const act = btn.dataset.action;
-        if (act === 'spectrum') openSpectrum();
         if (act === 'diary') { initDiary(); openModal('modalDiary'); }
         if (act === 'meditate') openModal('modalMeditate');
         closeMobileSidebar();
@@ -1121,6 +1190,9 @@
         if (btn.dataset.close === 'modalMeditate') stopMeditation();
         setNavChatActive();
       });
+    });
+    document.querySelectorAll('.modal').forEach(modal => {
+      modal.addEventListener('click', e => { if (e.target === modal) closeModal(modal.id); });
     });
 
     document.getElementById('saveDiary').onclick = saveDiary;
