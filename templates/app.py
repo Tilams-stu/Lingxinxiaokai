@@ -6,6 +6,7 @@ import json
 import logging
 import os
 import re
+import threading
 from datetime import timedelta
 from functools import wraps
 from pathlib import Path
@@ -16,8 +17,9 @@ from flask_cors import CORS
 from werkzeug.middleware.proxy_fix import ProxyFix
 from werkzeug.security import check_password_hash, generate_password_hash
 
-from ai_service import CRISIS_REPLY, UpstreamError, analyze_emotions, complete_chat, is_crisis, stream_chat
-from db import close_db, get_db, init_db, save_message_pair, utc_now
+from ai_service import CRISIS_REPLY, is_crisis
+from db import close_db, delete_session_data, get_db, init_db, latest_assessment, load_session_context, save_turn, utc_now
+from gateway import GatewayError, NodeGateway
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -28,6 +30,25 @@ VISIBLE = lambda value: bool(value) and all(char.isprintable() and not char.issp
 class _NoopLimiter:
     def limit(self, *_args, **_kwargs):
         return lambda function: function
+
+
+class KeyedBusyLock:
+    """Non-blocking process-local exclusion for one authenticated session turn."""
+
+    def __init__(self):
+        self._guard = threading.Lock()
+        self._held: set[tuple[int, str]] = set()
+
+    def acquire(self, key: tuple[int, str]) -> bool:
+        with self._guard:
+            if key in self._held:
+                return False
+            self._held.add(key)
+            return True
+
+    def release(self, key: tuple[int, str]) -> None:
+        with self._guard:
+            self._held.discard(key)
 
 
 def _load_env() -> None:
@@ -87,24 +108,16 @@ def admin_required(function):
 def _validate_chat(payload: dict):
     mode = payload.get("mode")
     session_id = payload.get("session_id")
-    messages = payload.get("messages")
+    if "messages" in payload or "history" in payload:
+        return None, _error("client_history_not_allowed", "浏览器不能提交会话历史", 400)
+    message = payload.get("message")
     if mode not in {"companion", "popsci"}:
         return None, _error("invalid_mode", "聊天模式无效", 400)
     if not isinstance(session_id, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", session_id):
         return None, _error("invalid_session", "会话标识无效", 400)
-    if not isinstance(messages, list) or not 1 <= len(messages) <= 20:
-        return None, _error("invalid_messages", "消息数量必须在 1 到 20 条之间", 400)
-    clean = []
-    for message in messages:
-        if not isinstance(message, dict) or message.get("role") not in {"user", "assistant"}:
-            return None, _error("invalid_messages", "消息角色只能是 user 或 assistant", 400)
-        content = message.get("content")
-        if not isinstance(content, str) or not content.strip() or len(content) > 4000:
-            return None, _error("invalid_messages", "消息内容不能为空且不能超过 4000 字符", 400)
-        clean.append({"role": message["role"], "content": content.strip()})
-    if clean[-1]["role"] != "user":
-        return None, _error("invalid_messages", "最后一条消息必须来自用户", 400)
-    return (mode, session_id, clean), None
+    if not isinstance(message, str) or not message.strip() or len(message) > 4000:
+        return None, _error("invalid_message", "消息内容不能为空且不能超过 4000 字符", 400)
+    return (mode, session_id, message.strip(), payload.get("stream") is True), None
 
 
 def create_app(test_config: dict | None = None) -> Flask:
@@ -118,9 +131,7 @@ def create_app(test_config: dict | None = None) -> Flask:
         SESSION_COOKIE_HTTPONLY=True,
         SESSION_COOKIE_SAMESITE=os.getenv("SESSION_COOKIE_SAMESITE", "Lax"),
         SESSION_COOKIE_SECURE=os.getenv("SESSION_COOKIE_SECURE", "false").lower() in {"1", "true", "yes", "on"},
-        DEEPSEEK_API_KEY=os.getenv("DEEPSEEK_API_KEY", ""),
-        DEEPSEEK_BASE_URL=os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com/v1"),
-        DEEPSEEK_MODEL=os.getenv("MODEL_NAME", "deepseek-chat"),
+        AGENT_BASE_URL=os.getenv("AGENT_BASE_URL", "http://127.0.0.1:8787"),
         RATELIMIT_ENABLED=True,
     )
     if test_config:
@@ -129,8 +140,8 @@ def create_app(test_config: dict | None = None) -> Flask:
 
     if not app.config["TESTING"]:
         placeholders = {"", "dev-secret-key", "placeholder", "your-long-random-secret-key-here", "your-deepseek-api-key-here"}
-        if app.config["SECRET_KEY"] in placeholders or app.config["DEEPSEEK_API_KEY"] in placeholders:
-            raise RuntimeError("生产配置缺少有效的 SECRET_KEY 或 DEEPSEEK_API_KEY")
+        if app.config["SECRET_KEY"] in placeholders:
+            raise RuntimeError("生产配置缺少有效的 SECRET_KEY")
     if os.getenv("TRUST_PROXY_HEADERS", "false").lower() in {"1", "true", "yes", "on"}:
         app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_port=1, x_prefix=1)
 
@@ -143,6 +154,8 @@ def create_app(test_config: dict | None = None) -> Flask:
     app.teardown_appcontext(close_db)
     Path(app.config["DATABASE"]).parent.mkdir(parents=True, exist_ok=True)
     init_db(app)
+    app.extensions["session_turn_lock"] = KeyedBusyLock()
+    app.extensions["turn_gateway"] = app.config.get("TURN_GATEWAY") or NodeGateway(app.config["AGENT_BASE_URL"])
 
     limiter = _NoopLimiter()
     if app.config["RATELIMIT_ENABLED"]:
@@ -299,13 +312,7 @@ def create_app(test_config: dict | None = None) -> Flask:
         session_id = request.args.get("session_id")
         if session_id is None:
             return _error("invalid_payload", "缺少 session_id", 400)
-        conn = get_db()
-        if session_id == "":
-            cursor = conn.execute("DELETE FROM chat_messages WHERE user_id = ? AND session_id IS NULL", (_current_user()["id"],))
-        else:
-            cursor = conn.execute("DELETE FROM chat_messages WHERE user_id = ? AND session_id = ?", (_current_user()["id"], session_id))
-        conn.commit()
-        return jsonify({"ok": True, "deleted": cursor.rowcount})
+        return jsonify({"ok": True, "deleted": delete_session_data(_current_user()["id"], session_id or None)})
 
     @app.get("/api/users/<int:user_id>/messages")
     @admin_required
@@ -346,46 +353,80 @@ def create_app(test_config: dict | None = None) -> Flask:
         validated, error = _validate_chat(request.get_json(silent=True) or {})
         if error:
             return error
-        mode, session_id, messages = validated
-        user_text = messages[-1]["content"]
+        mode, session_id, user_text, wants_stream = validated
         user_id = _current_user()["id"]
+        busy_lock: KeyedBusyLock = app.extensions["session_turn_lock"]
+        key = (user_id, session_id)
+        if not busy_lock.acquire(key):
+            return _error("session_busy", "该会话正在处理中", 409)
         if is_crisis(user_text):
-            save_message_pair(user_id, session_id, user_text, CRISIS_REPLY)
-            if request.get_json(silent=True).get("stream") is True:
+            try:
+                save_turn(user_id, session_id, user_text, CRISIS_REPLY, mode=mode)
+            finally:
+                busy_lock.release(key)
+            if wants_stream:
                 def crisis_stream():
-                    yield f"data: {json.dumps({'type': 'delta', 'content': CRISIS_REPLY}, ensure_ascii=False)}\n\n"
-                    yield f"data: {json.dumps({'type': 'done'}, ensure_ascii=False)}\n\n"
+                    yield f"event: delta\ndata: {json.dumps({'content': CRISIS_REPLY}, ensure_ascii=False)}\n\n"
+                    yield "event: done\ndata: {}\n\n"
                 return Response(stream_with_context(crisis_stream()), mimetype="text/event-stream")
             return jsonify({"reply": CRISIS_REPLY})
-        if request.get_json(silent=True).get("stream") is True:
-            def persist(reply: str):
-                save_message_pair(user_id, session_id, user_text, reply)
-            return Response(stream_with_context(stream_chat(app.config, mode, messages, persist)), mimetype="text/event-stream")
         try:
-            reply = complete_chat(app.config, mode, messages)
-        except UpstreamError as exc:
+            messages, state_snapshot, summary = load_session_context(user_id, session_id)
+            gateway = app.extensions["turn_gateway"]
+            events = gateway.stream_turn(input=user_text, state_snapshot=state_snapshot, messages=messages, summary=summary)
+            if wants_stream:
+                def proxy_stream():
+                    reply_parts: list[str] = []
+                    failed = False
+                    try:
+                        for event in events:
+                            if event.type == "done":
+                                continue
+                            if event.type == "error":
+                                failed = True
+                                yield f"event: error\ndata: {json.dumps({'message': event.message or 'local agent unavailable'}, ensure_ascii=False)}\n\n"
+                            elif event.type in {"analysis", "delta"} and event.content:
+                                if event.type == "delta":
+                                    reply_parts.append(event.content)
+                                yield f"event: {event.type}\ndata: {json.dumps({'content': event.content}, ensure_ascii=False)}\n\n"
+                        reply = "".join(reply_parts).strip()
+                        if not failed and reply:
+                            save_turn(user_id, session_id, user_text, reply, mode=mode)
+                        elif not failed:
+                            yield f"event: error\ndata: {json.dumps({'message': 'local agent returned no reply'}, ensure_ascii=False)}\n\n"
+                    except GatewayError as exc:
+                        yield f"event: error\ndata: {json.dumps({'message': str(exc)}, ensure_ascii=False)}\n\n"
+                    finally:
+                        busy_lock.release(key)
+                        yield "event: done\ndata: {}\n\n"
+                return Response(stream_with_context(proxy_stream()), mimetype="text/event-stream")
+            reply_parts = []
+            for event in events:
+                if event.type == "error":
+                    raise GatewayError(event.message or "local agent unavailable")
+                if event.type == "delta" and event.content:
+                    reply_parts.append(event.content)
+            reply = "".join(reply_parts).strip()
+            if not reply:
+                raise GatewayError("local agent returned no reply")
+            save_turn(user_id, session_id, user_text, reply, mode=mode)
+            return jsonify({"reply": reply})
+        except GatewayError as exc:
             return _error("upstream_unavailable", str(exc), 502)
-        save_message_pair(user_id, session_id, user_text, reply)
-        return jsonify({"reply": reply})
+        finally:
+            if not wants_stream:
+                busy_lock.release(key)
 
-    @app.post("/api/emotions/analyze")
+    @app.get("/api/assessment")
     @login_required
-    @limiter.limit("10 per minute", key_func=user_key)
-    def emotions():
-        payload = request.get_json(silent=True) or {}
-        mode = payload.get("mode")
-        text = payload.get("text")
-        if mode not in {"companion", "popsci"}:
-            return _error("invalid_mode", "聊天模式无效", 400)
-        if not isinstance(text, str) or not text.strip():
-            return _error("invalid_text", "分析文本不能为空", 400)
-        if len(text) > 500:
-            return _error("payload_too_large", "分析文本不能超过 500 字符", 413)
-        try:
-            scores = analyze_emotions(app.config, mode, text.strip())
-        except UpstreamError as exc:
-            return _error("upstream_unavailable", str(exc), 502)
-        return jsonify({"scores": scores})
+    def assessment():
+        session_id = request.args.get("session_id")
+        if not isinstance(session_id, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", session_id):
+            return _error("invalid_session", "会话标识无效", 400)
+        return jsonify({
+            "assessment": latest_assessment(_current_user()["id"], session_id),
+            "disclaimer": "This experimental conversation state is not a medical assessment or diagnosis.",
+        })
 
     @app.route("/api/<path:_unknown>", methods=["GET", "POST", "PUT", "PATCH", "DELETE"])
     def unknown_api(_unknown: str):
