@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { once } from 'node:events';
+import * as serviceModule from '../dist/service.js';
 import { assistantTerminalFailure, buildModelContext, createService } from '../dist/service.js';
 
 async function start(service) {
@@ -8,6 +9,34 @@ async function start(service) {
   await once(server, 'listening');
   return { server, baseUrl: `http://127.0.0.1:${server.address().port}` };
 }
+
+test('companion dialogue policy moves from exploration to clarification and allows a micro-action only when asked', () => {
+  assert.equal(typeof serviceModule.deriveCompanionDialoguePolicy, 'function');
+
+  const opening = serviceModule.deriveCompanionDialoguePolicy([], '最近总是很累');
+  assert.deepEqual(opening, { stage: 'explore', userTurns: 1, allowsAdvice: false, allowsPsychoeducation: false });
+
+  const clarification = serviceModule.deriveCompanionDialoguePolicy([
+    { role: 'user', content: '我因为工作很然虑' },
+    { role: 'assistant', content: '我听到了' },
+    { role: 'user', content: '晚上也睡不好' },
+    { role: 'assistant', content: '这很消耗' }
+  ], '白天也集中不了');
+  assert.deepEqual(clarification, { stage: 'clarify', userTurns: 3, allowsAdvice: false, allowsPsychoeducation: false });
+
+  const action = serviceModule.deriveCompanionDialoguePolicy([], '我现在能怎么做？');
+  assert.deepEqual(action, { stage: 'micro_action', userTurns: 1, allowsAdvice: true, allowsPsychoeducation: false });
+});
+
+test('companion exploration prompt requires one question instead of unsolicited methods', () => {
+  const policy = serviceModule.deriveCompanionDialoguePolicy([], '最近总是很累');
+  const prompt = serviceModule.buildAgentSystemPrompt('companion', policy);
+
+  assert.match(prompt, /当前阶段：探索/);
+  assert.match(prompt, /只问一个开放式问题/);
+  assert.match(prompt, /不要主动提供方法或清单/);
+  assert.match(prompt, /不超过 4 句/);
+});
 
 test('GET /health reports the loopback service as healthy', async () => {
   const { server, baseUrl } = await start(createService({ streamNormalTurn: async function* () {} }));

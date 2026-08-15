@@ -2,6 +2,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { Agent, type StreamFn } from '@earendil-works/pi-agent-core';
 import { streamSimple } from '@earendil-works/pi-ai/api/openai-completions';
 import { SessionContextManager, type ContextMessage, type ContextResult } from './context.js';
+import { buildAgentSystemPrompt, deriveCompanionDialoguePolicy } from './dialogue.js';
 import { resolveDeepSeekV4Flash } from './model.js';
 import { classifyRisk, crisisResources, type RiskLevel } from './safety.js';
 import { createLocalSupportTools, sourceForLocalTool } from './tools.js';
@@ -17,9 +18,10 @@ export interface ServiceDependencies {
   maxRequestBytes?: number;
 }
 
-const systemPrompt = '\u4f60\u662f\u672c\u5730\u5b9e\u9a8c\u6027\u5fc3\u7406\u652f\u6301\u52a9\u624b\u3002\u63d0\u4f9b\u5171\u60c5\u3001\u975e\u8bca\u65ad\u6027\u652f\u6301\u548c\u53ef\u884c\u7684\u4e0b\u4e00\u6b65\uff1b\u4e0d\u505a\u533b\u7597\u8bca\u65ad\u3002\u53ea\u4f7f\u7528\u63d0\u4f9b\u7684\u672c\u5730\u652f\u6301\u5de5\u5177\u3002';
 const safetyPrompt = '\u4f60\u662f\u5b89\u5168\u9884\u68c0\u5668\u3002\u53ea\u5224\u65ad\u5f53\u524d\u8f93\u5165\u4e2d\u662f\u5426\u660e\u786e\u63d0\u5230\u81ea\u6211\u4f24\u5bb3\u3001\u81ea\u6740\u610f\u5ff5\u3001\u5f53\u524d\u610f\u56fe\u3001\u8ba1\u5212\u6216\u624b\u6bb5\u3002\u4e0d\u505a\u8bca\u65ad\u3001\u4e0d\u8f93\u51fa\u8bc1\u636e\u3001\u4e0d\u63a8\u6d4b\u672a\u8bf4\u660e\u7684\u4e8b\u5b9e\u3002\u53ea\u8fd4\u56de JSON: {"level":"none|uncertain|concern|high|imminent"}\u3002\u53ea\u6709\u660e\u786e\u7684\u5f53\u524d\u610f\u56fe\u4e14\u5df2\u8bf4\u660e\u8ba1\u5212\u6216\u624b\u6bb5\u624d\u53ef\u7528 imminent\uff1b\u81ea\u6211\u4f24\u5bb3\u610f\u5ff5\u4f7f\u7528 high\u3002';
 const riskRank = { none: 0, uncertain: 1, concern: 2, high: 3, imminent: 4 } as const;
+
+export { buildAgentSystemPrompt, deriveCompanionDialoguePolicy } from './dialogue.js';
 
 function extractText(content: Array<{ type: string; text?: string }>): string {
   return content.filter((item) => item.type === 'text' && typeof item.text === 'string').map((item) => item.text).join('');
@@ -146,8 +148,11 @@ async function* piTurn(request: TurnRequest, apiKey: string): AsyncIterable<Turn
   const queue = new AsyncEventQueue();
   const sources: SourceMetadata[] = [];
   let completedTurns = 0;
+  const policy = request.mode === 'companion'
+    ? deriveCompanionDialoguePolicy(request.messages ?? [], request.input)
+    : undefined;
   const agent = new Agent({
-    initialState: { systemPrompt, model: resolveDeepSeekV4Flash({ apiKey }), thinkingLevel: 'off', tools: createLocalSupportTools() },
+    initialState: { systemPrompt: buildAgentSystemPrompt(request.mode, policy), model: resolveDeepSeekV4Flash({ apiKey }), thinkingLevel: 'off', tools: createLocalSupportTools() },
     streamFn: streamSimple as StreamFn,
     getApiKey: () => apiKey,
     shouldStopAfterTurn: () => ++completedTurns >= 2
