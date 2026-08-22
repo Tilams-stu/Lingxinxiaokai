@@ -42,7 +42,7 @@
           <span class="nav-icon"><i class="fa-solid fa-gear"></i></span>
           <div class="nav-body">
             <h3>管理后台</h3>
-            <p>导出全站聊天记录</p>
+            <p>查询账号与会话记录</p>
           </div>
           <i class="fa-solid fa-chevron-right nav-arrow"></i>
         </a>

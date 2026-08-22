@@ -4,6 +4,7 @@
 flowchart TD
   Browser -->|/api/chat| Flask
   Browser -->|/info /companion| Flask
+  Admin[管理员页面] -->|用户目录 / 最近消息 / 导出| Flask
   Flask --> SQLite
   Flask -->|POST /turn, loopback only| Pi[Node agent-service]
   Pi --> DeepSeek[DeepSeek V4 Flash]
@@ -32,3 +33,9 @@ Flask 不持有模型 Provider 实现，也不把 API key 返回给浏览器。`
 5. Flask 转发 `analysis`、`delta`、`error`、`done` SSE。陪伴模式在完成时原子保存回复、展示安全的状态快照和必要检查点。
 
 高/紧急风险不会进入普通 Agent 或工具循环。完整历史不会被删除；压缩只影响送入模型的上下文。
+
+## 状态回顾与管理员查询
+
+- 状态回顾进度由 Flask 实时统计当前用户、当前会话的已保存用户消息。少于 8 次时只公开 `collecting` 和剩余次数；达到门槛后才读取最新展示安全快照。
+- 管理员仍从普通登录页进入系统，权限由数据库 `is_admin` 标记和 Flask `admin_required` 校验。Vue 管理页只读，按称呼/学号过滤用户，并将最近最多 500 条消息按 `session_id` 分组。
+- 管理员查询和全量导出均不读取 `assessment_snapshots.evidence_json` 或 `context_checkpoints.summary`。

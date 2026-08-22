@@ -18,7 +18,7 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from ai_service import CRISIS_REPLY, is_crisis
-from db import close_db, delete_session_data, get_db, init_db, latest_assessment, load_session_context, save_turn, utc_now
+from db import ASSESSMENT_REQUIRED_TURNS, assessment_progress, close_db, delete_session_data, get_db, init_db, latest_assessment, load_session_context, save_turn, utc_now
 from gateway import GatewayError, NodeGateway
 
 
@@ -470,10 +470,19 @@ def create_app(test_config: dict | None = None) -> Flask:
         session_id = request.args.get("session_id")
         if not isinstance(session_id, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", session_id):
             return _error("invalid_session", "会话标识无效", 400)
+        progress = assessment_progress(_current_user()["id"], session_id)
+        if progress["completed"] < ASSESSMENT_REQUIRED_TURNS:
+            return jsonify({
+                "assessment": None,
+                "status": "collecting",
+                "progress": progress,
+                "disclaimer": "This experimental conversation state is not a medical assessment or diagnosis.",
+            })
         current_assessment = latest_assessment(_current_user()["id"], session_id)
         return jsonify({
             "assessment": current_assessment,
             "status": "ready" if current_assessment else "insufficient",
+            "progress": progress,
             "disclaimer": "This experimental conversation state is not a medical assessment or diagnosis.",
         })
 

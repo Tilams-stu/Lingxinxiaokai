@@ -122,6 +122,47 @@ def test_admin_command_grants_real_database_role(app, client):
     assert client.get("/api/users").status_code == 403
 
 
+def test_admin_query_lists_users_caps_messages_and_excludes_private_state(app, client):
+    """The read-only console receives bounded chat rows, never assessment internals."""
+    register(client, username="adminuser", student_id="20260003")
+    runner = app.test_cli_runner()
+    assert runner.invoke(args=["set-admin", "adminuser"]).exit_code == 0
+    client.post("/api/auth/logout")
+    login(client, username="adminuser", student_id="20260003")
+
+    with app.app_context():
+        conn = get_db()
+        user_id = conn.execute("SELECT id FROM users WHERE username = ?", ("adminuser",)).fetchone()["id"]
+        conn.executemany(
+            "INSERT INTO chat_messages (user_id, role, content, session_id) VALUES (?, ?, ?, ?)",
+            [(user_id, "user", f"message-{index}", "admin-check") for index in range(501)],
+        )
+        save_turn(
+            user_id,
+            "admin-check",
+            "latest user",
+            "latest assistant",
+            state_snapshot={"mood": "private"},
+            evidence={"verbatim": "private evidence"},
+            checkpoint_summary="private context summary",
+        )
+        conn.commit()
+
+    users_response = client.get("/api/users")
+    assert users_response.status_code == 200
+    listed = next(user for user in users_response.get_json()["users"] if user["username"] == "adminuser")
+    assert listed["chat_count"] == 503
+    messages_response = client.get(f"/api/users/{listed['id']}/messages?limit=999")
+    assert messages_response.status_code == 200
+    assert len(messages_response.get_json()["messages"]) == 500
+
+    export_response = client.get("/api/admin/export-all")
+    assert export_response.status_code == 200
+    export_text = export_response.get_data(as_text=True)
+    assert "private evidence" not in export_text
+    assert "private context summary" not in export_text
+
+
 def test_chat_rejects_client_history(client):
     """Accepting browser-supplied history would permit users to replace persisted context."""
     register(client)
@@ -200,6 +241,8 @@ def test_assessment_exposes_only_safe_latest_state_for_current_user(app, client)
             safety_level="high",
             evidence={"verbatim": "private"},
         )
+        for index in range(7):
+            save_turn(user_id, "companion-1", f"u{index + 2}", f"a{index + 2}")
         save_turn(other_id, "companion-1", "other u", "other a", state_snapshot={"mood": "other"})
 
     response = client.get("/api/assessment?session_id=companion-1")
@@ -221,17 +264,60 @@ def test_assessment_exposes_only_safe_latest_state_for_current_user(app, client)
     assert "verbatim" not in json.dumps(payload)
     assert "private" not in json.dumps(payload)
     assert "other" not in json.dumps(payload)
+    assert payload["progress"] == {"required": 8, "completed": 8, "remaining": 0}
 
 
-def test_assessment_reports_insufficient_when_no_snapshot_exists(client):
-    """The UI needs a first-class empty state rather than inferring it from a missing object."""
+def test_assessment_reports_collection_when_no_turns_exist(client):
+    """The UI needs a first-class progress state rather than exposing unknown fields."""
     register(client)
 
     response = client.get("/api/assessment?session_id=companion-1")
 
     assert response.status_code == 200
     assert response.get_json()["assessment"] is None
-    assert response.get_json()["status"] == "insufficient"
+    assert response.get_json()["status"] == "collecting"
+    assert response.get_json()["progress"] == {"required": 8, "completed": 0, "remaining": 8}
+
+
+def test_assessment_reports_collection_progress_before_eight_user_turns(app, client):
+    """The recap must explain the missing turns instead of exposing unknown fields prematurely."""
+    register(client)
+    with app.app_context():
+        user_id = get_db().execute("SELECT id FROM users WHERE username = ?", ("testuser",)).fetchone()["id"]
+        for index in range(3):
+            save_turn(user_id, "companion-1", f"user {index}", f"assistant {index}")
+
+    response = client.get("/api/assessment?session_id=companion-1")
+
+    assert response.status_code == 200
+    assert response.get_json() == {
+        "assessment": None,
+        "status": "collecting",
+        "progress": {"required": 8, "completed": 3, "remaining": 5},
+        "disclaimer": "This experimental conversation state is not a medical assessment or diagnosis.",
+    }
+
+
+def test_assessment_counts_only_current_session_user_messages(app, client):
+    """Progress must not mix assistant messages, another session, or another user."""
+    register(client)
+    with app.app_context():
+        conn = get_db()
+        user_id = conn.execute("SELECT id FROM users WHERE username = ?", ("testuser",)).fetchone()["id"]
+        for index in range(7):
+            save_turn(user_id, "companion-1", f"user {index}", f"assistant {index}")
+        save_turn(user_id, "other-session", "other session user", "other session assistant")
+        conn.execute(
+            "INSERT INTO chat_messages (user_id, role, content, session_id) VALUES (?, ?, ?, ?)",
+            (user_id, "assistant", "assistant only", "companion-1"),
+        )
+        conn.commit()
+
+    response = client.get("/api/assessment?session_id=companion-1")
+
+    assert response.status_code == 200
+    assert response.get_json()["progress"] == {"required": 8, "completed": 7, "remaining": 1}
+    assert response.get_json()["status"] == "collecting"
 
 
 def test_popsci_turn_never_creates_assessment_snapshot(app, client):

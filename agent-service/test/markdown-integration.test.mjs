@@ -14,3 +14,21 @@ test('chat pages render assistant Markdown instead of replacing it with plain te
     assert.match(source, /role === 'assistant'\) messageBody\.innerHTML = md\(content\)/);
   }
 });
+
+test('admin page exposes read-only user search and session inspection contracts', async () => {
+  const source = await readFile(new URL('../../web/src/views/AdminView.vue', import.meta.url), 'utf8');
+  assert.match(source, /\/api\/users['"`]/);
+  assert.match(source, /\/api\/users\//);
+  assert.match(source, /session_id/);
+  assert.match(source, /chat_count/);
+  assert.match(source, /搜索|search/i);
+  assert.match(source, /导出/);
+});
+
+test('companion assessment page renders collection progress before safe state fields', async () => {
+  const source = await readFile(new URL('../../templates/index（心理陪伴）.html', import.meta.url), 'utf8');
+  assert.match(source, /status === ['"`]collecting['"`]/);
+  assert.match(source, /remaining/);
+  assert.match(source, /还需要/);
+  assert.match(source, /暂无明确提及/);
+});

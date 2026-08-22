@@ -896,8 +896,10 @@
     }
 
     function assessmentValue(value) {
-      if (Array.isArray(value)) return value.filter(Boolean).join('、');
-      if (value && typeof value === 'object') return value.label || value.text || value.summary || '';
+      if (Array.isArray(value)) return value.filter(Boolean).map(assessmentValue).join('、');
+      if (value && typeof value === 'object') return assessmentValue(value.label || value.text || value.summary || '');
+      if (value === 'unknown') return '暂无明确提及';
+      if (value === 'insufficient') return '信息仍有限';
       return value == null || value === '' ? '暂无记录' : String(value);
     }
 
@@ -915,11 +917,23 @@
       content.replaceChildren();
       const message = document.createElement('p');
       message.className = 'assessment-state';
-      if (status === 'loading') message.textContent = '正在整理本次对话中已记录的状态…';
-      if (status === 'insufficient') message.textContent = '当前对话中的信息还不足以形成状态回顾。你可以继续聊聊近况，之后再回来看看。';
+      if (status === 'loading') message.textContent = '正在检查当前会话进度…';
+      if (status === 'collecting') {
+        const remaining = Math.max(0, Number(payload.progress?.remaining) || 0);
+        message.textContent = `还需要 ${remaining} 条对话才可进行回顾`;
+      }
+      if (status === 'insufficient') message.textContent = '已达到回顾轮数，但暂时没有可用状态记录，请继续完成一轮陪伴对话后重试。';
       if (status === 'unavailable') message.textContent = payload.message || '状态回顾暂时不可用，请稍后再试。';
       content.appendChild(message);
-      if (status !== 'ready') return;
+      if (status !== 'ready') {
+        if (status !== 'loading' && payload.disclaimer) {
+          const disclaimer = document.createElement('p');
+          disclaimer.className = 'assessment-state';
+          disclaimer.textContent = payload.disclaimer;
+          content.appendChild(disclaimer);
+        }
+        return;
+      }
 
       const assessment = payload.assessment || {};
       const fields = [
@@ -958,7 +972,9 @@
         if (r.status === 401) { location.href = '/login'; return; }
         const data = await r.json().catch(() => ({}));
         if (!r.ok) { renderAssessment('unavailable', { message: pickApiError(data) }); return; }
-        renderAssessment(data.status === 'ready' && data.assessment ? 'ready' : 'insufficient', data);
+        if (data.status === 'ready' && data.assessment) renderAssessment('ready', data);
+        else if (data.status === 'collecting') renderAssessment('collecting', data);
+        else renderAssessment('insufficient', data);
       } catch (_) {
         renderAssessment('unavailable');
       }

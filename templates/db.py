@@ -18,6 +18,7 @@ PUBLIC_ASSESSMENT_FIELDS = (
     "evidenceSufficiency",
     "followUpTarget",
 )
+ASSESSMENT_REQUIRED_TURNS = 8
 
 
 def utc_now() -> str:
@@ -184,6 +185,22 @@ def latest_assessment(user_id: int, session_id: str):
         if isinstance(state, dict) and isinstance(state.get(key), str)
     }
     return {"state": display_state, "created_at": row["created_at"]}
+
+
+def assessment_progress(user_id: int, session_id: str) -> dict[str, int]:
+    """Count completed user turns for one authenticated conversation only."""
+    completed = get_db().execute(
+        """
+        SELECT COUNT(*) AS count FROM chat_messages
+        WHERE user_id = ? AND session_id = ? AND role = 'user'
+        """,
+        (user_id, session_id),
+    ).fetchone()["count"]
+    return {
+        "required": ASSESSMENT_REQUIRED_TURNS,
+        "completed": completed,
+        "remaining": max(0, ASSESSMENT_REQUIRED_TURNS - completed),
+    }
 
 
 def save_turn(
