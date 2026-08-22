@@ -55,3 +55,12 @@ templates/__pycache__/
 .pytest_tmp/
 templates/.pytest_tmp/
 .worktrees/
+
+# Codex / Superpowers 工作流内部产物（不属于项目文档）
+/.superpowers/
+/docs/superpowers/
+
+# 测试运行产生的本地缓存与临时目录
+.pytest_cache/
+.pytest_run*/
+.pytest_tmp*/

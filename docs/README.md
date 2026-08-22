@@ -20,5 +20,3 @@
 | [故障排查](operations/troubleshooting.md) | Flask、Node、DeepSeek、管理员权限和回顾进度问题 |
 | [API 与数据安全](security/API_SECURITY_GUIDE.md) | 权限、密钥、隐私、限流和发布检查 |
 | [交接清单](handover.md) | 维护职责、验收项目、已知限制和禁止恢复的旧实现 |
-
-`superpowers/specs/` 与 `superpowers/plans/` 保存历史设计和实施记录，不作为当前运行手册。历史文档如果与以上内容冲突，以代码、自动测试和本页列出的当前实现文档为准。
